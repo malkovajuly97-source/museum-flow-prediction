@@ -29,6 +29,8 @@ for csv_file in csv_files:
         df = pd.read_csv(csv_file)
         trajectory_id = Path(csv_file).stem.replace('_traj_normalized', '')
         df['trajectory_id'] = trajectory_id
+        # Sort by timestamp to ensure correct order
+        df = df.sort_values('timestamp').reset_index(drop=True)
         all_trajectories.append(df)
         print(f"Loaded: {trajectory_id} ({len(df)} points)")
     except Exception as e:
@@ -57,25 +59,76 @@ if n_floors == 1:
 # Use a colormap that provides good distinction
 colors = plt.cm.gist_rainbow(np.linspace(0, 1, len(csv_files)))
 
+def plot_trajectory_segments(ax, floor_data, color):
+    """
+    Plot trajectory with breaks at large jumps (e.g., floor transitions)
+    """
+    if len(floor_data) == 0:
+        return
+    
+    # Sort by timestamp to ensure correct order
+    floor_data = floor_data.sort_values('timestamp').reset_index(drop=True)
+    
+    # Calculate distances between consecutive points
+    if len(floor_data) > 1:
+        x_diff = floor_data['x'].diff().abs()
+        y_diff = floor_data['y'].diff().abs()
+        distances = np.sqrt(x_diff**2 + y_diff**2)
+        
+        # Threshold for detecting jumps (e.g., floor transitions or large gaps)
+        # Use 95th percentile as threshold to catch only significant jumps
+        threshold = distances.quantile(0.95) if len(distances) > 1 else np.inf
+        
+        # Find indices where jumps occur
+        jump_indices = distances[distances > threshold].index.tolist()
+        
+        # Split trajectory into continuous segments
+        segments = []
+        start_idx = 0
+        
+        for jump_idx in jump_indices:
+            if jump_idx > start_idx:
+                segments.append((start_idx, jump_idx))
+            start_idx = jump_idx
+        
+        # Add last segment
+        if start_idx < len(floor_data):
+            segments.append((start_idx, len(floor_data)))
+        
+        # Plot each segment separately
+        for seg_start, seg_end in segments:
+            seg_data = floor_data.iloc[seg_start:seg_end]
+            if len(seg_data) > 1:
+                ax.plot(seg_data['x'], seg_data['y'], 
+                       color=color, linewidth=1.0, alpha=0.7)
+    else:
+        # Single point - just mark it
+        ax.plot(floor_data['x'].iloc[0], floor_data['y'].iloc[0], 
+               'o', color=color, markersize=4, alpha=0.8)
+
 for idx, floor in enumerate(floors):
     ax = axes[idx]
     
     # Plot each trajectory on this floor
     trajectory_count = 0
     for traj_df in all_trajectories:
-        floor_data = traj_df[traj_df['floorNumber'] == floor]
+        floor_data = traj_df[traj_df['floorNumber'] == floor].copy()
         
         if len(floor_data) > 0:
             color = colors[trajectory_count % len(colors)]
-            # Plot trajectory line
-            ax.plot(floor_data['x'], floor_data['y'], 
-                   color=color, linewidth=1.0, alpha=0.7)
-            # Mark start point
-            ax.plot(floor_data['x'].iloc[0], floor_data['y'].iloc[0], 
-                   'o', color=color, markersize=4, alpha=0.8)
-            # Mark end point
-            ax.plot(floor_data['x'].iloc[-1], floor_data['y'].iloc[-1], 
-                   's', color=color, markersize=4, alpha=0.8)
+            
+            # Plot trajectory with automatic break detection
+            plot_trajectory_segments(ax, floor_data, color)
+            
+            # Mark start point (first point by timestamp)
+            floor_data_sorted = floor_data.sort_values('timestamp')
+            ax.plot(floor_data_sorted['x'].iloc[0], floor_data_sorted['y'].iloc[0], 
+                   'o', color=color, markersize=6, alpha=0.9, markeredgecolor='black', markeredgewidth=0.5)
+            
+            # Mark end point (last point by timestamp)
+            ax.plot(floor_data_sorted['x'].iloc[-1], floor_data_sorted['y'].iloc[-1], 
+                   's', color=color, markersize=6, alpha=0.9, markeredgecolor='black', markeredgewidth=0.5)
+            
             trajectory_count += 1
     
     # Settings
@@ -108,27 +161,69 @@ for floor in floors:
     layer_name = f"FLOOR_{floor}"
     doc.layers.new(name=layer_name, dxfattribs={'color': int(floor) + 1})
 
+def create_dxf_segments(floor_data):
+    """
+    Create trajectory segments for DXF, breaking at large jumps
+    """
+    if len(floor_data) <= 1:
+        return []
+    
+    floor_data = floor_data.sort_values('timestamp').reset_index(drop=True)
+    
+    # Calculate distances between consecutive points
+    x_diff = floor_data['x'].diff().abs()
+    y_diff = floor_data['y'].diff().abs()
+    distances = np.sqrt(x_diff**2 + y_diff**2)
+    
+    # Threshold for detecting jumps
+    threshold = distances.quantile(0.95) if len(distances) > 1 else np.inf
+    
+    # Find indices where jumps occur
+    jump_indices = distances[distances > threshold].index.tolist()
+    
+    # Split trajectory into continuous segments
+    segments = []
+    start_idx = 0
+    
+    for jump_idx in jump_indices:
+        if jump_idx > start_idx:
+            segments.append((start_idx, jump_idx))
+        start_idx = jump_idx
+    
+    # Add last segment
+    if start_idx < len(floor_data):
+        segments.append((start_idx, len(floor_data)))
+    
+    return segments
+
 # Add trajectories to DXF, organized by floor and trajectory
 trajectory_count = 0
 for traj_df in all_trajectories:
     trajectory_id = traj_df['trajectory_id'].iloc[0]
     
     for floor in floors:
-        floor_data = traj_df[traj_df['floorNumber'] == floor]
+        floor_data = traj_df[traj_df['floorNumber'] == floor].copy()
         
-        if len(floor_data) > 1:
-            # Create polyline for this trajectory segment
-            points = [(row['x'], row['y'], 0) for _, row in floor_data.iterrows()]
-            
-            # Add polyline to DXF on appropriate floor layer
+        if len(floor_data) > 0:
             layer_name = f"FLOOR_{floor}"
-            polyline = msp.add_lwpolyline(
-                points=points,
-                dxfattribs={
-                    'layer': layer_name, 
-                    'color': (trajectory_count % 7) + 1  # Cycle through colors
-                }
-            )
+            
+            # Get segments (will break at large jumps)
+            segments = create_dxf_segments(floor_data)
+            
+            for seg_start, seg_end in segments:
+                seg_data = floor_data.iloc[seg_start:seg_end]
+                if len(seg_data) > 1:
+                    # Create polyline for this trajectory segment
+                    points = [(row['x'], row['y'], 0) for _, row in seg_data.iterrows()]
+                    
+                    # Add polyline to DXF on appropriate floor layer
+                    polyline = msp.add_lwpolyline(
+                        points=points,
+                        dxfattribs={
+                            'layer': layer_name, 
+                            'color': (trajectory_count % 7) + 1  # Cycle through colors
+                        }
+                    )
     
     trajectory_count += 1
 
