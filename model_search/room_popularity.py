@@ -1,0 +1,285 @@
+"""
+Room popularity ranking из DXF: зоны 0–15, треки в слоях.
+Публичный API: compute_room_popularity_ranking(), save_ranking().
+"""
+import json
+from pathlib import Path
+
+import pandas as pd
+
+try:
+    import ezdxf
+except ImportError:
+    ezdxf = None
+
+try:
+    from shapely.geometry import Polygon, Point
+    HAS_SHAPELY = True
+except ImportError:
+    HAS_SHAPELY = False
+
+NEAREST_POLYGON_MAX_DIST = 150.0
+
+
+def _make_polygon(points):
+    if len(points) < 3:
+        return None
+    coords = list(points)
+    if len(coords) > 3 and abs(coords[0][0] - coords[-1][0]) < 1e-9 and abs(coords[0][1] - coords[-1][1]) < 1e-9:
+        coords = coords[:-1]
+    if not HAS_SHAPELY:
+        return coords
+    try:
+        poly = Polygon(coords)
+        if poly.is_empty or not poly.is_valid:
+            poly = poly.buffer(0)
+        return poly if poly.is_valid and not poly.is_empty else None
+    except Exception:
+        try:
+            return Polygon(coords).buffer(0)
+        except Exception:
+            return None
+
+
+def _point_inside(px, py, poly):
+    if HAS_SHAPELY and poly is not None and hasattr(poly, "contains"):
+        return poly.contains(Point(px, py))
+    polygon = poly if isinstance(poly, list) else (list(poly.exterior.coords) if hasattr(poly, "exterior") else [])
+    n = len(polygon)
+    if n < 3:
+        return False
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i][0], polygon[i][1]
+        xj, yj = polygon[j][0], polygon[j][1]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _polygon_area(poly):
+    if HAS_SHAPELY and poly is not None and hasattr(poly, "area"):
+        return abs(float(poly.area))
+    if isinstance(poly, list) and len(poly) >= 3:
+        area = 0.0
+        for i in range(len(poly)):
+            j = (i + 1) % len(poly)
+            area += poly[i][0] * poly[j][1] - poly[j][0] * poly[i][1]
+        return abs(area) * 0.5
+    return 0.0
+
+
+def _distance_to_polygon(px, py, poly):
+    if not HAS_SHAPELY or poly is None or not hasattr(poly, "distance"):
+        return float("inf")
+    return float(poly.distance(Point(px, py)))
+
+
+def parse_zones_from_dxf(path_dxf, layer_area):
+    path = Path(path_dxf).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"DXF не найден: {path}")
+    if ezdxf is None:
+        raise ImportError("Установите ezdxf: pip install ezdxf")
+    doc = ezdxf.readfile(str(path))
+    msp = doc.modelspace()
+
+    zone_labels = []
+    for e in list(msp.query("TEXT")) + list(msp.query("MTEXT")):
+        if getattr(e.dxf, "layer", "") != layer_area:
+            continue
+        raw = getattr(e.dxf, "text", None) or ""
+        text = (e.plain_text() if hasattr(e, "plain_text") else raw).strip()
+        if text.isdigit() and 0 <= int(text) <= 15:
+            insert = e.dxf.insert
+            zone_labels.append((float(insert.x), float(insert.y), int(text)))
+
+    polygons = []
+    for e in msp.query("POLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_area:
+            continue
+        if not hasattr(e, "get_mode"):
+            continue
+        try:
+            if e.get_mode() != "AcDb2dPolyline":
+                continue
+        except Exception:
+            continue
+        closed = getattr(e, "is_closed", None)
+        closed = closed() if callable(closed) else closed
+        points = []
+        try:
+            for v in e.vertices:
+                loc = v.dxf.location
+                points.append((float(loc.x), float(loc.y)))
+        except Exception:
+            continue
+        if len(points) < 3:
+            continue
+        if not closed:
+            x0, y0 = points[0]
+            x1, y1 = points[-1]
+            if (x0 - x1) ** 2 + (y0 - y1) ** 2 > 1e-6:
+                points.append(points[0])
+        polygons.append(points)
+
+    for e in msp.query("LWPOLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_area:
+            continue
+        closed = getattr(e, "closed", False) or getattr(e, "is_closed", False)
+        if callable(closed):
+            closed = closed()
+        try:
+            pts = list(e.get_points("xy"))
+        except Exception:
+            try:
+                pts = [(float(p[0]), float(p[1])) for p in e]
+            except Exception:
+                continue
+        if len(pts) < 3:
+            continue
+        if not closed:
+            x0, y0 = pts[0]
+            x1, y1 = pts[-1]
+            if (x0 - x1) ** 2 + (y0 - y1) ** 2 > 1e-6:
+                pts = list(pts) + [pts[0]]
+        polygons.append(pts)
+
+    geom_list = [_make_polygon(p) or p for p in polygons]
+    polygons_with_zone = []
+    for geom in geom_list:
+        zone = None
+        for (lx, ly, z) in zone_labels:
+            if _point_inside(lx, ly, geom):
+                zone = z
+                break
+        polygons_with_zone.append((geom, zone))
+
+    polygons_with_zone.sort(key=lambda pwz: _polygon_area(pwz[0]))
+    return polygons_with_zone, zone_labels
+
+
+def parse_trajectories_from_dxf(path_dxf, layer_trajectories):
+    path = Path(path_dxf).resolve()
+    if ezdxf is None:
+        raise ImportError("Установите ezdxf: pip install ezdxf")
+    doc = ezdxf.readfile(str(path))
+    msp = doc.modelspace()
+
+    trajectories = []
+    for e in msp.query("POLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_trajectories:
+            continue
+        try:
+            mode = e.get_mode()
+        except Exception:
+            continue
+        if mode != "AcDb2dPolyline":
+            continue
+        points = []
+        try:
+            for v in e.vertices:
+                loc = v.dxf.location
+                points.append((float(loc.x), float(loc.y)))
+        except Exception:
+            continue
+        if len(points) >= 2:
+            trajectories.append(points)
+
+    for e in msp.query("LWPOLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_trajectories:
+            continue
+        try:
+            pts = list(e.get_points("xy"))
+        except Exception:
+            try:
+                pts = [(float(p[0]), float(p[1])) for p in e]
+            except Exception:
+                continue
+        if len(pts) >= 2:
+            trajectories.append(pts)
+
+    return trajectories
+
+
+def assign_point_to_zone(px, py, polygons_with_zone, zone_labels):
+    for geom, zone in polygons_with_zone:
+        if zone is not None and _point_inside(px, py, geom):
+            return zone
+    best_zone = None
+    best_dist = NEAREST_POLYGON_MAX_DIST
+    for geom, zone in polygons_with_zone:
+        if zone is None:
+            continue
+        d = _distance_to_polygon(px, py, geom)
+        if d < best_dist:
+            best_dist = d
+            best_zone = zone
+    if best_zone is not None:
+        return best_zone
+    best_z, best_d2 = None, float("inf")
+    for zx, zy, z in zone_labels:
+        d2 = (px - zx) ** 2 + (py - zy) ** 2
+        if d2 < best_d2:
+            best_d2, best_z = d2, z
+    return best_z if best_z is not None else -1
+
+
+def compute_room_popularity_ranking(path_dxf, layer_area, layer_trajectories, layer_floor_plan=None):
+    """
+    Загружает зоны и треки из DXF, считает room popularity ranking.
+    Возвращает (pd.DataFrame с колонками zone, n_agents_visited, rank), list[int] цепочка зон (от наименее к наиболее популярной), int n_trajectories.
+    """
+    polygons_with_zone, zone_labels = parse_zones_from_dxf(path_dxf, layer_area)
+    trajectories = parse_trajectories_from_dxf(path_dxf, layer_trajectories)
+
+    trajectory_zones = {}
+    for i, points in enumerate(trajectories):
+        zones_visited = set()
+        for (x, y) in points:
+            z = assign_point_to_zone(x, y, polygons_with_zone, zone_labels)
+            if z >= 0:
+                zones_visited.add(z)
+        trajectory_zones[f"traj_{i}"] = zones_visited
+
+    zone_counts = {}
+    for zones in trajectory_zones.values():
+        for z in zones:
+            zone_counts[z] = zone_counts.get(z, 0) + 1
+
+    zones_sorted = sorted(zone_counts.keys(), key=lambda z: (zone_counts[z], z))
+    ranking = [
+        {"zone": zone, "n_agents_visited": zone_counts[zone], "rank": rank}
+        for rank, zone in enumerate(zones_sorted, start=1)
+    ]
+    chain = [r["zone"] for r in ranking]
+    df = pd.DataFrame(ranking, columns=["zone", "n_agents_visited", "rank"])
+    return df, chain, len(trajectories)
+
+
+def save_ranking(ranking_df, chain, path_dxf, n_trajectories, layer_floor_plan=None, layer_area=None, layer_trajectories=None):
+    """Сохраняет ranking в CSV и JSON рядом с DXF."""
+    out_dir = Path(path_dxf).resolve().parent
+    out_csv = out_dir / "room_popularity_ranking.csv"
+    out_json = out_dir / "room_popularity_ranking.json"
+
+    ranking_df.to_csv(out_csv, index=False)
+
+    ranking_list = ranking_df.to_dict("records")
+    out_data = {
+        "ranking": ranking_list,
+        "popularity_chain_least_to_most": chain,
+        "n_trajectories": n_trajectories,
+        "params": {
+            "path_dxf": str(Path(path_dxf).resolve()),
+            "layer_floor_plan": layer_floor_plan,
+            "layer_area": layer_area,
+            "layer_trajectories": layer_trajectories,
+        },
+    }
+    with open(out_json, "w", encoding="utf-8") as f:
+        json.dump(out_data, f, ensure_ascii=False, indent=2)
+
+    return out_csv, out_json

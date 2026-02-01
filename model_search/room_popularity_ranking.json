@@ -1,0 +1,109 @@
+{
+  "ranking": [
+    {
+      "zone": 4,
+      "n_agents_visited": 19,
+      "rank": 1
+    },
+    {
+      "zone": 2,
+      "n_agents_visited": 44,
+      "rank": 2
+    },
+    {
+      "zone": 6,
+      "n_agents_visited": 46,
+      "rank": 3
+    },
+    {
+      "zone": 14,
+      "n_agents_visited": 49,
+      "rank": 4
+    },
+    {
+      "zone": 11,
+      "n_agents_visited": 58,
+      "rank": 5
+    },
+    {
+      "zone": 1,
+      "n_agents_visited": 69,
+      "rank": 6
+    },
+    {
+      "zone": 12,
+      "n_agents_visited": 72,
+      "rank": 7
+    },
+    {
+      "zone": 15,
+      "n_agents_visited": 79,
+      "rank": 8
+    },
+    {
+      "zone": 8,
+      "n_agents_visited": 88,
+      "rank": 9
+    },
+    {
+      "zone": 5,
+      "n_agents_visited": 90,
+      "rank": 10
+    },
+    {
+      "zone": 9,
+      "n_agents_visited": 93,
+      "rank": 11
+    },
+    {
+      "zone": 0,
+      "n_agents_visited": 124,
+      "rank": 12
+    },
+    {
+      "zone": 7,
+      "n_agents_visited": 173,
+      "rank": 13
+    },
+    {
+      "zone": 10,
+      "n_agents_visited": 187,
+      "rank": 14
+    },
+    {
+      "zone": 13,
+      "n_agents_visited": 253,
+      "rank": 15
+    },
+    {
+      "zone": 3,
+      "n_agents_visited": 282,
+      "rank": 16
+    }
+  ],
+  "popularity_chain_least_to_most": [
+    4,
+    2,
+    6,
+    14,
+    11,
+    1,
+    12,
+    15,
+    8,
+    5,
+    9,
+    0,
+    7,
+    10,
+    13,
+    3
+  ],
+  "n_trajectories": 974,
+  "params": {
+    "path_dxf": "C:\\Users\\malko\\Desktop\\Diploma\\Term\\bird-dataset-main\\model_search\\Floor_0.dxf",
+    "layer_floor_plan": "Floor_plan",
+    "layer_area": "Area",
+    "layer_trajectories": "Trajectories"
+  }
+}
