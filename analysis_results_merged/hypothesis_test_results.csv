@@ -1,0 +1,6 @@
+feature,feature_ru,kruskal_statistic,p_value,reject_H0_005
+speed,Скорость,32.4355,0.0,True
+length,Длина маршрута,13.585,0.003528,True
+nb_stops,Количество остановок,26.8687,6e-06,True
+duration,Длительность визита,24.0909,2.4e-05,True
+nb_items,Число просмотренных экспонатов,31.555,1e-06,True

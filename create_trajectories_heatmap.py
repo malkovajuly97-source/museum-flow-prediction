@@ -73,10 +73,12 @@ print(f"Диапазон X (в метрах): {all_x_meters.min():.2f} - {all_x_
 print(f"Диапазон Y (в метрах): {all_y_meters.min():.2f} - {all_y_meters.max():.2f} м")
 
 # Параметры для heatmap
-# Сохраняем исходный размер ячейки в единицах координат (50 единиц)
-cell_size_units = 50.0  # Размер ячейки в единицах координат (как было раньше)
-cell_size_meters = cell_size_units * SCALE_FACTOR  # Размер ячейки в метрах для отображения
+# Возвращаем предыдущую сетку: фиксированный шаг в единицах координат (50 единиц)
+cell_size_units = 50.0  # Размер ячейки в единицах координат
+cell_size_meters = cell_size_units * SCALE_FACTOR  # Соответствие в метрах
 print(f"Размер ячейки: {cell_size_units} единиц координат ({cell_size_meters:.2f} м)")
+
+# Границы области в метрах
 min_x, max_x = all_x_meters.min(), all_x_meters.max()
 min_y, max_y = all_y_meters.min(), all_y_meters.max()
 
@@ -87,25 +89,28 @@ max_x += padding_meters
 min_y -= padding_meters
 max_y += padding_meters
 
-# Создаем сетку (используем размер ячейки в единицах координат, но конвертируем границы в метры)
-# Сначала создаем сетку в единицах координат
+# Создаем сетку: сначала в единицах координат
 x_bins_units = np.arange(all_x.min(), all_x.max() + cell_size_units, cell_size_units)
 y_bins_units = np.arange(all_y.min(), all_y.max() + cell_size_units, cell_size_units)
 
-# Конвертируем границы в метры для отображения
+# И соответствующие границы в метрах для отображения
 x_bins = x_bins_units * SCALE_FACTOR
 y_bins = y_bins_units * SCALE_FACTOR
 
-# Создаем 2D гистограмму (heatmap) - используем исходные координаты в единицах
-# чтобы сохранить ту же детализацию, что была раньше
+# Создаем 2D гистограмму (heatmap) в исходных единицах, чтобы сохранить детализацию
 heatmap, x_edges, y_edges = np.histogram2d(all_x, all_y, bins=[x_bins_units, y_bins_units])
 
-# Конвертируем edges в метры для extent
+# Конвертируем edges в метры для extent и сетки
 x_edges_meters = x_edges * SCALE_FACTOR
 y_edges_meters = y_edges * SCALE_FACTOR
 
 # Транспонируем для правильной ориентации
 heatmap = heatmap.T
+
+# На основе количества точек считаем суммарное время в каждой ячейке
+# В нормализованных траекториях интервал между точками = 2 секунды
+TIME_STEP_SECONDS = 2.0
+time_heatmap = heatmap.astype(float) * TIME_STEP_SECONDS
 
 # Создаем градиент colormap (от синего к красному)
 colors = ['#000080', '#0000FF', '#00FFFF', '#FFFF00', '#FF0000', '#800000']
@@ -114,6 +119,7 @@ cmap = LinearSegmentedColormap.from_list('trajectory_density', colors, N=n_bins)
 
 # Создаем extent для правильных координат (в метрах)
 extent = [x_edges_meters[0], x_edges_meters[-1], y_edges_meters[0], y_edges_meters[-1]]
+
 
 # Функция для загрузки и отрисовки плана этажа (конвертирует в метры)
 def draw_floor_plan(ax, plan_file, scale_factor):
@@ -137,47 +143,44 @@ def draw_floor_plan(ax, plan_file, scale_factor):
             return False
     return False
 
+
+# Функция для отрисовки сетки ячеек heatmap по границам бинов (в метрах)
+def draw_cell_grid(ax, x_edges_m, y_edges_m, color='white', alpha=0.15, linewidth=0.5):
+    # Вертикальные линии по X
+    for x in x_edges_m:
+        ax.axvline(x, color=color, alpha=alpha, linewidth=linewidth, zorder=5)
+    # Горизонтальные линии по Y
+    for y in y_edges_m:
+        ax.axhline(y, color=color, alpha=alpha, linewidth=linewidth, zorder=5)
+
 plan_file = Path('bird-dataset-main/data/NMFA_3floors_plan.json')
 
 # ============================================================================
-# ВИЗУАЛИЗАЦИЯ 1: Пороговая фильтрация
+# ВИЗУАЛИЗАЦИЯ 1: Heatmap по времени (time density) с той же сеткой
 # ============================================================================
 print("\n" + "="*60)
-print("Создание визуализации 1: Пороговая фильтрация")
+print("Создание визуализации 1: Time Density (суммарное время в ячейке)")
 print("="*60)
 
-non_zero_values = heatmap[heatmap > 0]
-if len(non_zero_values) > 0:
-    # Пороговая фильтрация - показываем только топ 15% ячеек
-    threshold_percentile = 85
-    threshold = np.percentile(non_zero_values, threshold_percentile)
-    
-    heatmap_filtered = heatmap.copy()
-    heatmap_filtered[heatmap_filtered < threshold] = 0
-    
-    # Используем исходные значения (без логарифма) для более понятной интерпретации
-    # ВАЖНО: Используем только отфильтрованные значения для масштабирования
-    filtered_values = heatmap_filtered[heatmap_filtered > 0]
-    if len(filtered_values) > 0:
-        # Используем перцентили для более мягкого контраста
-        vmin = np.percentile(filtered_values, 10)  # Игнорируем самые низкие 10%
-        vmax = np.percentile(filtered_values, 95)   # Игнорируем самые высокие 5%
-    else:
-        vmin = 0
-        vmax = 1
-    
-    heatmap_to_show = heatmap_filtered
-    
-    print(f"Порог фильтрации: {threshold:.1f} точек (перцентиль {threshold_percentile}%)")
-    print(f"Показывается {np.sum(heatmap_filtered > 0)} из {len(non_zero_values)} ячеек")
-    print(f"Диапазон отфильтрованных значений: {vmin:.1f} - {vmax:.1f} точек на ячейку")
+non_zero_time = time_heatmap[time_heatmap > 0]
+if len(non_zero_time) > 0:
+    # Возвращаемся к схеме с перцентилями: 5-й и 95-й.
+    # Это аналогично тому, как мы делали по плотности точек,
+    # но теперь для времени.
+    vmin = np.percentile(non_zero_time, 5)   # нижняя граница
+    vmax = np.percentile(non_zero_time, 95)  # верхняя граница
+    time_to_show = time_heatmap.copy()
+    # Обнуляем всё ниже vmin для уменьшения шума
+    time_to_show[time_to_show < vmin] = 0
+    print(f"Диапазон времени (сек): {non_zero_time.min():.1f} - {non_zero_time.max():.1f}")
+    print(f"Отображаемый диапазон (сек): {vmin:.1f} - {vmax:.1f} (5–95 перцентили)")
 else:
     vmin = 0
     vmax = 1
-    heatmap_to_show = heatmap
+    time_to_show = time_heatmap
 
 fig, ax = plt.subplots(figsize=(20, 16))
-im = ax.imshow(heatmap_to_show, 
+im = ax.imshow(time_to_show, 
                extent=extent,
                cmap=cmap,
                vmin=vmin,
@@ -187,18 +190,27 @@ im = ax.imshow(heatmap_to_show,
                alpha=0.8)
 
 draw_floor_plan(ax, plan_file, SCALE_FACTOR)
+draw_cell_grid(ax, x_edges_meters, y_edges_meters)
 
 ax.set_xlabel('X координата (м)', fontsize=14)
 ax.set_ylabel('Y координата (м)', fontsize=14)
-ax.set_title(f'Пороговая фильтрация (топ 15%)\nВсего точек: {len(all_x):,}, Файлов: {len(csv_files)}', 
+ax.set_title(f'Time Density Heatmap (суммарное время в ячейке)\nВсего точек: {len(all_x):,}, Файлов: {len(csv_files)}', 
              fontsize=16, fontweight='bold')
 ax.set_aspect('equal')
 ax.grid(True, alpha=0.3, linestyle='--')
 
 cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-cbar.set_label('Количество точек на ячейку', fontsize=12, rotation=270, labelpad=20)
+cbar.set_label('Суммарное время в ячейке (секунды)', fontsize=12, rotation=270, labelpad=20)
 
-output_file1 = 'trajectories_heatmap_threshold.png'
+# Добавляем подписи на colorbar в минутах, чтобы было видно ~19 минут
+if vmax > 0:
+    tick_values = np.linspace(vmin, vmax, 5)
+    cbar.set_ticks(tick_values)
+    # Показываем метки и в секундах, и в минутах для понятности
+    tick_labels = [f"{tv:.0f} с\n({tv/60:.1f} мин)" for tv in tick_values]
+    cbar.set_ticklabels(tick_labels)
+
+output_file1 = 'trajectories_time_heatmap.png'
 plt.tight_layout()
 plt.savefig(output_file1, dpi=300, bbox_inches='tight')
 print(f"Heatmap сохранена в {output_file1}")
@@ -229,6 +241,7 @@ levels = np.linspace(vmin, vmax, 8)  # 8 границ = 7 уровней
 im = ax.contourf(heatmap_to_show, levels=levels, extent=extent, cmap=cmap, alpha=0.8)
 
 draw_floor_plan(ax, plan_file, SCALE_FACTOR)
+draw_cell_grid(ax, x_edges_meters, y_edges_meters)
 
 ax.set_xlabel('X координата (м)', fontsize=14)
 ax.set_ylabel('Y координата (м)', fontsize=14)
@@ -293,6 +306,7 @@ im = ax.imshow(heatmap_to_show,
                alpha=0.8)
 
 draw_floor_plan(ax, plan_file, SCALE_FACTOR)
+draw_cell_grid(ax, x_edges_meters, y_edges_meters)
 
 ax.set_xlabel('X координата (м)', fontsize=14)
 ax.set_ylabel('Y координата (м)', fontsize=14)

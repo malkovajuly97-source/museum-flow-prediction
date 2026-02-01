@@ -1,0 +1,7 @@
+,speed,speed,speed,duration,duration,duration,nb_items,nb_items,nb_items,nb_stops,nb_stops,nb_stops
+,mean,std,count,mean,std,count,mean,std,count,mean,std,count
+assigned_cluster,,,,,,,,,,,,
+0,30.7294,6.8729,2,3030.0,520.4306,2,179.0,21.2132,2,48.5,14.8492,2
+1,23.2162,6.17,3,3994.0,721.6065,3,111.3333,25.1064,3,57.6667,24.9065,3
+2,24.462,3.4133,5,3934.8,840.2019,5,184.6,17.5157,5,70.8,7.791,5
+3,32.6191,1.6484,4,2609.0,439.8803,4,118.75,29.3868,4,41.0,8.124,4

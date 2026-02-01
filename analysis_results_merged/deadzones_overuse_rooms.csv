@@ -1,0 +1,13 @@
+room_id,n_observations_total,zone_type
+Room_0,11,dead_zone
+Room_1,31,dead_zone
+Room_10,213,normal
+Room_11,119,normal
+Room_12,250,normal
+Room_13,355,overuse
+Room_14,263,overuse
+Room_3,81,normal
+Room_5,36,dead_zone
+Room_7,383,overuse
+Room_8,112,normal
+Room_9,244,normal

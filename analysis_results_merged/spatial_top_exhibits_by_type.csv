@@ -1,0 +1,61 @@
+behavior_type,paintingId,painting name,room_id,wall_id,n_observations,n_trajectories
+Активный обходчик,0_0861,La Toussaint,Room_13,W0_209,12,7
+Активный обходчик,0_0841,Les Amoureux,Room_13,W0_184,9,6
+Активный обходчик,0_0869,La douleur,Room_13,W0_187,9,6
+Активный обходчик,0_0887,Nymphe,Room_12,W0_201,9,7
+Активный обходчик,0_0890,Les Voluptueux,Room_12,W0_222,9,7
+Активный обходчик,0_0694,La femme rousse,Room_7,W0_221,8,7
+Активный обходчик,0_0803,"La Seine au Pont-Neuf, effet de brouillard",Room_9,W0_163,8,6
+Активный обходчик,0_0819,Port de Toulon,Room_10,W0_165,8,7
+Активный обходчик,0_0353,Coin de jardin,Room_9,W0_188,7,5
+Активный обходчик,0_0356,Paysage de Diénay,Room_9,W0_188,7,6
+Активный обходчик,0_0668,Le Grand Char,Room_7,W0_119,7,5
+Активный обходчик,0_0699,Composition,Room_7,W0_221,7,6
+Активный обходчик,0_0772,Autoportrait,Room_10,W0_131,7,7
+Активный обходчик,0_0776,Paysage d'Aix-en-Provence,Room_8,W0_132,7,7
+Активный обходчик,0_0781,Femme sur un canapé,Room_8,W0_156,7,6
+Быстрый,0_0890,Les Voluptueux,Room_12,W0_222,15,12
+Быстрый,0_0869,La douleur,Room_13,W0_187,11,9
+Быстрый,0_0731,Pipe d'eau douce,Room_7,W0_170,9,9
+Быстрый,0_0861,La Toussaint,Room_13,W0_209,9,8
+Быстрый,0_5830,Les grands Trans-parents,Room_1,W0_0,9,9
+Быстрый,0_0439,Le pauvre pêcheur,Room_12,W0_203,7,6
+Быстрый,0_0680,"DIJ VII - VI 1,2,3",Room_7,W0_127,7,5
+Быстрый,0_0824,Escale,Room_10,W0_183,7,7
+Быстрый,0_0865,La Toussaint,Room_13,W0_228,7,7
+Быстрый,0_0879,Chant du soir,Room_12,W0_199,7,6
+Быстрый,0_0887,Nymphe,Room_12,W0_201,7,7
+Быстрый,0_0670,Anamorphose,Room_7,W0_119,6,6
+Быстрый,0_0733,La Bête,Room_7,W0_170,6,6
+Быстрый,0_0772,Autoportrait,Room_10,W0_131,6,6
+Быстрый,0_0843,Après l'enterrement,Room_13,W0_187,6,6
+Исследователь,0_0861,La Toussaint,Room_13,W0_209,17,13
+Исследователь,0_0890,Les Voluptueux,Room_12,W0_222,17,12
+Исследователь,0_0869,La douleur,Room_13,W0_187,16,13
+Исследователь,0_0887,Nymphe,Room_12,W0_201,14,12
+Исследователь,0_0847,Autoportrait,Room_13,W0_208,12,9
+Исследователь,0_0848,Autoportrait,Room_13,W0_208,12,9
+Исследователь,0_0815,"Le souk aux tapis, Marrakech",Room_10,W0_160,11,7
+Исследователь,0_0824,Escale,Room_10,W0_183,11,8
+Исследователь,0_0841,Les Amoureux,Room_13,W0_184,11,9
+Исследователь,0_0843,Après l'enterrement,Room_13,W0_187,11,10
+Исследователь,0_0851,Le Sculpteur Bussière dans son atelier,Room_13,W0_208,11,9
+Исследователь,0_0301,Cathédrale de Rouen,Room_14,W0_223,10,9
+Исследователь,0_0570,Sans titre,Room_3,W0_54,10,10
+Исследователь,0_0969,Portrait de Colette Gervex,Room_9,W0_214,10,7
+Исследователь,0_0334,Paysage,Room_9,W0_153,9,9
+Медленный,0_0861,La Toussaint,Room_13,W0_209,18,10
+Медленный,0_0869,La douleur,Room_13,W0_187,17,9
+Медленный,0_0841,Les Amoureux,Room_13,W0_184,16,7
+Медленный,0_0890,Les Voluptueux,Room_12,W0_222,12,10
+Медленный,0_0848,Autoportrait,Room_13,W0_208,11,6
+Медленный,0_0887,Nymphe,Room_12,W0_201,10,9
+Медленный,0_0815,"Le souk aux tapis, Marrakech",Room_10,W0_160,9,7
+Медленный,0_0879,Chant du soir,Room_12,W0_199,9,8
+Медленный,0_0787,Environs de Dijon,Room_8,W0_134,8,8
+Медленный,0_0824,Escale,Room_10,W0_183,8,7
+Медленный,0_0847,Autoportrait,Room_13,W0_208,8,5
+Медленный,0_0813,"Ighil n'oro, le Mellah",Room_10,W0_160,7,7
+Медленный,0_0826,Le lancement du filet,Room_10,W0_148,7,7
+Медленный,0_0851,Le Sculpteur Bussière dans son atelier,Room_13,W0_208,7,6
+Медленный,0_0853,Jeune Nancéienne dans un paysage de neige,Room_13,W0_195,7,4
