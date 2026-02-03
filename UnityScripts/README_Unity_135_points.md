@@ -29,6 +29,8 @@
 | Откуда (в репозитории) | Куда (в Unity) |
 |------------------------|-----------------|
 | `UnityScripts/AgentPath.cs` | **Assets/AgentPath.cs** (или в папку Scripts) |
+| `UnityScripts/AgentSpawnManager.cs` | **Assets/AgentSpawnManager.cs** |
+| `UnityScripts/TrackRecorder.cs` | **Assets/TrackRecorder.cs** |
 | `UnityScripts/Editor/CreateAttractionPointsEditor.cs` | **Assets/Editor/CreateAttractionPointsEditor.cs** |
 
 Важно: скрипт с меню **обязательно** должен лежать в папке **Editor** (например `Assets/Editor/` или `Assets/Scripts/Editor/`), иначе пункт меню не появится.
@@ -58,6 +60,27 @@
 - `y = 0f` — высота точек (пол).
 
 Подгони эти три числа под размер и положение твоего этажа в сцене Unity (например, посмотри, где у тебя лежит модель пола, и подбери scale/offset так, чтобы точки оказались на полу).
+
+---
+
+## Запись треков и экспорт в DXF
+
+1. Добавь на сцену пустой объект и повесь на него **TrackRecorder**.
+2. В Inspector укажи **Floor** (объект пола) и **Attractions Container** (контейнер с точками аттракций).
+   - Floor — для границ пола и преобразования координат.
+   - Attractions — если указан, план (контур пола + точки аттракций) экспортируется в тот же JSON. Треки и план будут в одной системе координат.
+3. Убедись, что **floor0_attractions.json** лежит в **StreamingAssets** (нужен для границ плана).
+4. Запусти сцену, дай агентам походить.
+5. ПКМ по TrackRecorder → **Сохранить треки** (или **S**) — треки и план сохранятся в `unity_tracks.json`.
+6. Экспорт в DXF: в папке bird-dataset-main выполни:
+   ```bash
+   python export_unity_tracks_to_dxf.py
+   ```
+   Или укажи путь к JSON:
+   ```bash
+   python export_unity_tracks_to_dxf.py путь/к/unity_tracks.json
+   ```
+   Будет создан **unity_tracks.dxf** рядом с JSON.
 
 ---
 

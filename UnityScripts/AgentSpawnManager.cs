@@ -1,10 +1,8 @@
 using System.Collections;
 using UnityEngine;
 
-/// <summary>
-/// Создаёт агентов с разнесённым по времени появлением и передаёт им контейнер аттракций.
-/// Положи на сцену, укажи префаб агента (Capsule с AgentPath + NavMeshAgent) и контейнер Attractions.
-/// </summary>
+// Создаёт агентов с разнесённым по времени появлением и передаёт им контейнер аттракций.
+// Положи на сцену, укажи префаб агента (Capsule с AgentPath + NavMeshAgent) и контейнер Attractions.
 public class AgentSpawnManager : MonoBehaviour
 {
     [Tooltip("Префаб агента (должен содержать AgentPath и NavMeshAgent).")]
@@ -20,7 +18,7 @@ public class AgentSpawnManager : MonoBehaviour
     public Transform[] spawnPoints;
 
     [Tooltip("Количество агентов для создания.")]
-    public int agentCount = 45;
+    public int agentCount = 51;
 
     [Tooltip("Минимальный интервал (сек) между появлением двух агентов.")]
     public float spawnIntervalMin = 2f;
