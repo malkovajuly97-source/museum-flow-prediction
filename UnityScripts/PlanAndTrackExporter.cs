@@ -128,22 +128,35 @@ public class PlanAndTrackExporter : MonoBehaviour
                 wrapper.trajectories.Add(new TrajectoryData { trajectory_id = kv.Key, points = pts });
             }
 
-            // План — контур пола (корректное извлечение из меша)
-            Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
-            var outline = floor != null ? GetMeshOutlineXZ(floor) : null;
-            if (outline == null && floorFallbackTransform != null)
-                outline = GetMeshOutlineXZ(floorFallbackTransform);
-            if (outline == null)
+            // План — контур пола (внутренняя граница пола, не внешний контур стен)
+            // Приоритет: unity_plan.json (от Export_floor_plan) → Floor → floor_bounds
+            var planPath = Path.Combine(dir, "unity_plan.json");
+            if (File.Exists(planPath))
             {
-                var fb = GameObject.Find("Nancy_Museum")?.transform ?? GameObject.Find("Nancy_Museum_unity_floor0_mirror")?.transform;
-                if (fb != null) outline = GetMeshOutlineXZ(fb);
+                try
+                {
+                    var planJson = File.ReadAllText(planPath);
+                    var planData = JsonUtility.FromJson<PlanFloorOnly>(planJson);
+                    if (planData?.floor_outline != null && planData.floor_outline.Count >= 3)
+                    {
+                        foreach (var p in planData.floor_outline)
+                            wrapper.floor_outline.Add(new Point2D { x = p.x, y = p.y });
+                    }
+                }
+                catch { }
             }
-            if (outline != null && outline.Count >= 3)
+            if (wrapper.floor_outline.Count < 3)
             {
-                foreach (var p in outline)
-                    wrapper.floor_outline.Add(new Point2D { x = p.x, y = p.y });
+                Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
+                var outline = floor != null ? GetMeshOutlineXZ(floor) : null;
+                if (outline != null && outline.Count >= 3)
+                {
+                    foreach (var p in outline)
+                        wrapper.floor_outline.Add(new Point2D { x = p.x, y = p.y });
+                }
             }
-            else if (floor != null && _floorWorldBounds.size.sqrMagnitude > 0.0001f)
+            Transform floorForBounds = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
+            if (wrapper.floor_outline.Count < 3 && floorForBounds != null && _floorWorldBounds.size.sqrMagnitude > 0.0001f)
             {
                 wrapper.floor_bounds = new FloorBoundsData
                 {
@@ -486,4 +499,7 @@ public class PlanAndTrackExporter : MonoBehaviour
         public List<WallOutlineData> wall_outlines = new List<WallOutlineData>();
         public List<Point2D> plan_points = new List<Point2D>();
     }
+
+    [Serializable]
+    class PlanFloorOnly { public List<Point2D> floor_outline; }
 }

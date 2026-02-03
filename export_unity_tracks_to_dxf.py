@@ -77,6 +77,16 @@ def main():
 
     floor_bounds = data.get("floor_bounds")
     floor_outline = data.get("floor_outline") or []
+    # Контур пола: если пуст — берём из unity_plan.json (от Export_floor_plan)
+    if not floor_outline and json_path.parent:
+        plan_path = json_path.parent / "unity_plan.json"
+        if plan_path.exists():
+            try:
+                with open(plan_path, "r", encoding="utf-8") as pf:
+                    plan_data = json.load(pf)
+                    floor_outline = plan_data.get("floor_outline") or []
+            except Exception:
+                pass
     wall_rects = data.get("wall_rects") or []
     wall_outlines = data.get("wall_outlines") or []
     has_unity_plan = bool(floor_bounds or floor_outline or wall_rects or wall_outlines)
@@ -145,7 +155,7 @@ def main():
                 coords = [(p.get("x", 0), p.get("y", 0), 0) for p in pts]
                 msp.add_lwpolyline(points=coords, close=len(coords) >= 3, dxfattribs={"layer": "PLAN_WALLS", "color": 7})
 
-        # Контур здания: если floor_outline пуст — строим из convex hull всех точек
+        # Fallback: convex hull (внешний контур) — только если контур пола не найден
         if not floor_outline and all_pts:
             hull_pts = _convex_hull([(p[0], p[1]) for p in all_pts])
             if len(hull_pts) >= 3:
