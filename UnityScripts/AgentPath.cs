@@ -19,7 +19,14 @@ public class AgentPath : MonoBehaviour
     public Transform allPointsContainer;
 
     [Tooltip("Сколько точек выбрать из allPointsContainer (используется только если allPointsContainer задан).")]
-    public int numberOfPointsToVisit = 15;
+    public int numberOfPointsToVisit = 5;
+
+    [Tooltip("Предпочитать соседние точки: следующий пункт выбирается из K ближайших (логичнее для музея).")]
+    public bool preferNeighbors = true;
+
+    [Tooltip("Из скольких ближайших не посещённых точек выбирать следующую (при preferNeighbors).")]
+    [Range(1, 10)]
+    public int chooseFromNearestK = 5;
 
     [Tooltip("Время ожидания (сек) у каждой точки. Если длина меньше числа точек, для остальных используется defaultWaitTime.")]
     public float[] waitTimes;
@@ -41,6 +48,13 @@ public class AgentPath : MonoBehaviour
     [Tooltip("Замкнуть маршрут: после последней точки снова идти к первой.")]
     public bool loop = false;
 
+    [Header("Точки выхода")]
+    [Tooltip("Точки выхода (5 лестниц). После последней картины агент идёт к ближайшей. Задаётся в Inspector или через AgentSpawnManager.")]
+    public Transform[] exitPoints;
+
+    [Tooltip("Дистанция до выхода, при которой считаем, что агент «ушел».")]
+    public float exitArrivalDistance = 1f;
+
     [Header("Избегание толпы")]
     [Tooltip("Радиус (м), в котором считаем других агентов у текущей цели.")]
     public float crowdRadius = 2f;
@@ -54,6 +68,7 @@ public class AgentPath : MonoBehaviour
     NavMeshAgent _agent;
     int _currentIndex;
     bool _waiting;
+    bool _goingToExit;
     float _lastCrowdCheck;
 
     void Start()
@@ -73,6 +88,7 @@ public class AgentPath : MonoBehaviour
 
         _currentIndex = 0;
         _waiting = false;
+        _goingToExit = false;
         _lastCrowdCheck = 0f;
         SetDestinationToCurrent();
     }
@@ -87,21 +103,70 @@ public class AgentPath : MonoBehaviour
         }
 
         int n = Mathf.Clamp(numberOfPointsToVisit, 1, total);
-        var indices = new List<int>(total);
-        for (int i = 0; i < total; i++)
-            indices.Add(i);
 
-        for (int i = 0; i < n; i++)
+        if (preferNeighbors)
         {
-            int j = Random.Range(i, indices.Count);
-            (indices[i], indices[j]) = (indices[j], indices[i]);
+            BuildNeighborPath(n, total);
+        }
+        else
+        {
+            var indices = new List<int>(total);
+            for (int i = 0; i < total; i++)
+                indices.Add(i);
+
+            for (int i = 0; i < n; i++)
+            {
+                int j = Random.Range(i, indices.Count);
+                (indices[i], indices[j]) = (indices[j], indices[i]);
+            }
+
+            var selected = new Transform[n];
+            for (int i = 0; i < n; i++)
+                selected[i] = allPointsContainer.GetChild(indices[i]);
+
+            points = selected;
+        }
+    }
+
+    /// <summary>Строит маршрут: каждая следующая точка — из K ближайших не посещённых.</summary>
+    void BuildNeighborPath(int n, int total)
+    {
+        var route = new List<Transform>(n);
+        var visited = new HashSet<int>();
+
+        int startIdx = Random.Range(0, total);
+        route.Add(allPointsContainer.GetChild(startIdx));
+        visited.Add(startIdx);
+
+        for (int step = 1; step < n; step++)
+        {
+            Vector3 currentPos = route[route.Count - 1].position;
+            var candidates = new List<(int idx, float sqrDist)>();
+
+            for (int i = 0; i < total; i++)
+            {
+                if (visited.Contains(i)) continue;
+                Transform t = allPointsContainer.GetChild(i);
+                if (t == null) continue;
+                float dx = t.position.x - currentPos.x;
+                float dz = t.position.z - currentPos.z;
+                float sqrDist = dx * dx + dz * dz;
+                candidates.Add((i, sqrDist));
+            }
+
+            if (candidates.Count == 0) break;
+
+            candidates.Sort((a, b) => a.sqrDist.CompareTo(b.sqrDist));
+
+            int k = Mathf.Min(chooseFromNearestK, candidates.Count);
+            int pick = Random.Range(0, k);
+            int nextIdx = candidates[pick].idx;
+
+            route.Add(allPointsContainer.GetChild(nextIdx));
+            visited.Add(nextIdx);
         }
 
-        var selected = new Transform[n];
-        for (int i = 0; i < n; i++)
-            selected[i] = allPointsContainer.GetChild(indices[i]);
-
-        points = selected;
+        points = route.ToArray();
     }
 
     void SetDestinationToCurrent()
@@ -135,15 +200,52 @@ public class AgentPath : MonoBehaviour
                 _currentIndex = 0;
             else
             {
-                _agent.ResetPath();
+                TryGoToExit();
                 return;
             }
         }
         SetDestinationToCurrent();
     }
 
+    void TryGoToExit()
+    {
+        var exits = exitPoints;
+        if (exits == null || exits.Length == 0) return;
+
+        Vector3 pos = transform.position;
+        Transform nearest = null;
+        float minSqr = float.MaxValue;
+        foreach (var t in exits)
+        {
+            if (t == null) continue;
+            float dx = t.position.x - pos.x;
+            float dz = t.position.z - pos.z;
+            float sqr = dx * dx + dz * dz;
+            if (sqr < minSqr) { minSqr = sqr; nearest = t; }
+        }
+        if (nearest != null)
+        {
+            _goingToExit = true;
+            _agent.SetDestination(nearest.position);
+        }
+        else
+        {
+            _agent.ResetPath();
+        }
+    }
+
     void Update()
     {
+        if (_goingToExit)
+        {
+            if (!_agent.pathPending && _agent.remainingDistance <= exitArrivalDistance)
+            {
+                _agent.ResetPath();
+                Destroy(gameObject); // Агент «ушёл» — исчезает из сцены
+            }
+            return;
+        }
+
         if (points == null || points.Length == 0) return;
         if (_waiting) return;
 
@@ -181,6 +283,7 @@ public class AgentPath : MonoBehaviour
             else
             {
                 _waiting = false;
+                TryGoToExit();
                 yield break;
             }
         }
