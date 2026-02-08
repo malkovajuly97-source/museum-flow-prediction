@@ -1,7 +1,8 @@
 """
-Room popularity ranking из DXF: зоны 0–15, треки в слоях.
-Публичный API: compute_room_popularity_ranking(), save_ranking().
+Room popularity ranking из DXF: зоны 0–15, треки в слоях или CSV.
+Публичный API: compute_room_popularity_ranking(), save_ranking(), load_trajectories_from_csv().
 """
+import glob
 import json
 from pathlib import Path
 
@@ -75,6 +76,33 @@ def _distance_to_polygon(px, py, poly):
     if not HAS_SHAPELY or poly is None or not hasattr(poly, "distance"):
         return float("inf")
     return float(poly.distance(Point(px, py)))
+
+
+def load_trajectories_from_csv(folder_path, floor_number=0):
+    """
+    Загружает треки из CSV. Каждый CSV = одна траектория.
+    Возвращает list[list[tuple]] — список траекторий, каждая = [(x,y), ...] sorted by timestamp.
+    """
+    path = Path(folder_path).resolve()
+    if not path.is_dir():
+        raise FileNotFoundError(f"Папка не найдена: {path}")
+    csv_files = glob.glob(str(path / "*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"Нет CSV в {path}")
+    trajectories = []
+    for csv_file in csv_files:
+        try:
+            df = pd.read_csv(csv_file)
+            df_floor = df[df["floorNumber"] == floor_number].copy()
+            if len(df_floor) > 0:
+                df_floor = df_floor.sort_values("timestamp").reset_index(drop=True)
+                points = [(float(row["x"]), float(row["y"])) for _, row in df_floor.iterrows()]
+                trajectories.append(points)
+        except Exception as e:
+            print(f"Ошибка при загрузке {csv_file}: {e}")
+    if not trajectories:
+        raise ValueError(f"Не найдено траекторий для этажа {floor_number}")
+    return trajectories
 
 
 def parse_zones_from_dxf(path_dxf, layer_area):
@@ -161,6 +189,39 @@ def parse_zones_from_dxf(path_dxf, layer_area):
     return polygons_with_zone, zone_labels
 
 
+def parse_floor_plan_lines(path_dxf, layer_floor_plan):
+    """
+    Извлекает линии плана этажа из DXF (для отрисовки).
+    Возвращает list of segments: [(x1,y1,x2,y2), ...].
+    """
+    path = Path(path_dxf).resolve()
+    if not path.exists() or ezdxf is None:
+        return []
+    doc = ezdxf.readfile(str(path))
+    msp = doc.modelspace()
+    segments = []
+    for e in msp.query("LWPOLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_floor_plan:
+            continue
+        try:
+            pts = list(e.get_points("xy"))
+        except Exception:
+            continue
+        for i in range(len(pts) - 1):
+            x1, y1 = float(pts[i][0]), float(pts[i][1])
+            x2, y2 = float(pts[i + 1][0]), float(pts[i + 1][1])
+            segments.append((x1, y1, x2, y2))
+    for e in msp.query("LINE"):
+        if getattr(e.dxf, "layer", "") != layer_floor_plan:
+            continue
+        try:
+            s, en = e.dxf.start, e.dxf.end
+            segments.append((float(s.x), float(s.y), float(en.x), float(en.y)))
+        except Exception:
+            continue
+    return segments
+
+
 def parse_trajectories_from_dxf(path_dxf, layer_trajectories):
     path = Path(path_dxf).resolve()
     if ezdxf is None:
@@ -227,14 +288,41 @@ def assign_point_to_zone(px, py, polygons_with_zone, zone_labels):
     return best_z if best_z is not None else -1
 
 
-def compute_room_popularity_ranking(path_dxf, layer_area, layer_trajectories, layer_floor_plan=None):
+def compute_transition_matrix(polygons_with_zone, zone_labels, trajectories):
     """
-    Загружает зоны и треки из DXF, считает room popularity ranking.
-    Возвращает (pd.DataFrame с колонками zone, n_agents_visited, rank), list[int] цепочка зон (от наименее к наиболее популярной), int n_trajectories.
+    Переходы from_zone -> to_zone для соседних точек траектории (A != B, оба >= 0).
+    Возвращает (pd.DataFrame с колонками from_zone, to_zone, count, dependency, dependency_pct), total_transitions.
     """
-    polygons_with_zone, zone_labels = parse_zones_from_dxf(path_dxf, layer_area)
-    trajectories = parse_trajectories_from_dxf(path_dxf, layer_trajectories)
+    transitions = {}
+    for points in trajectories:
+        zones_seq = [
+            assign_point_to_zone(x, y, polygons_with_zone, zone_labels)
+            for (x, y) in points
+        ]
+        for i in range(len(zones_seq) - 1):
+            a, b = zones_seq[i], zones_seq[i + 1]
+            if a >= 0 and b >= 0 and a != b:
+                key = (a, b)
+                transitions[key] = transitions.get(key, 0) + 1
 
+    total_transitions = sum(transitions.values())
+    rows = []
+    for (from_z, to_z), count in sorted(transitions.items()):
+        dependency = count / total_transitions if total_transitions > 0 else 0.0
+        dependency_pct = 100.0 * dependency
+        rows.append({
+            "from_zone": from_z,
+            "to_zone": to_z,
+            "count": count,
+            "dependency": round(dependency, 6),
+            "dependency_pct": round(dependency_pct, 2),
+        })
+    df = pd.DataFrame(rows, columns=["from_zone", "to_zone", "count", "dependency", "dependency_pct"])
+    return df, total_transitions
+
+
+def _compute_ranking_from_trajectories(polygons_with_zone, zone_labels, trajectories):
+    """Внутренняя логика: polygons_with_zone, zone_labels, trajectories -> (df, chain, n)."""
     trajectory_zones = {}
     for i, points in enumerate(trajectories):
         zones_visited = set()
@@ -257,6 +345,22 @@ def compute_room_popularity_ranking(path_dxf, layer_area, layer_trajectories, la
     chain = [r["zone"] for r in ranking]
     df = pd.DataFrame(ranking, columns=["zone", "n_agents_visited", "rank"])
     return df, chain, len(trajectories)
+
+
+def compute_room_popularity_ranking(path_dxf, layer_area, layer_trajectories=None, layer_floor_plan=None, trajectories=None):
+    """
+    Считает room popularity ranking.
+    Если trajectories задан (list[list[tuple]]) — использует его; иначе загружает из DXF (layer_trajectories обязателен).
+    Возвращает (pd.DataFrame, list[int] chain, int n_trajectories).
+    """
+    polygons_with_zone, zone_labels = parse_zones_from_dxf(path_dxf, layer_area)
+    if trajectories is not None:
+        pass
+    elif layer_trajectories is not None:
+        trajectories = parse_trajectories_from_dxf(path_dxf, layer_trajectories)
+    else:
+        raise ValueError("Укажите layer_trajectories или trajectories")
+    return _compute_ranking_from_trajectories(polygons_with_zone, zone_labels, trajectories)
 
 
 def save_ranking(ranking_df, chain, path_dxf, n_trajectories, layer_floor_plan=None, layer_area=None, layer_trajectories=None):
