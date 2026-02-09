@@ -15,9 +15,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+try:
+    import ezdxf
+except ImportError:
+    ezdxf = None
+
 BASE = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE.parent
-DEFAULT_TRAJECTORIES_FOLDER = BASE / "unity_tracks_bird"
+NANCY_STREAMING = Path(r"C:\Users\malko\Nancy_floor0\Assets\StreamingAssets")
+DEFAULT_TRAJECTORIES_FOLDER = NANCY_STREAMING / "unity_tracks_bird"
+DEFAULT_UNITY_PLAN_DXF = NANCY_STREAMING / "unity_tracks.dxf"
 DEFAULT_GRID_FILE = BASE / "density_floor0.json"
 OUTPUT_CSV = BASE / "density_simulation.csv"
 OUTPUT_JSON = BASE / "density_simulation.json"
@@ -80,6 +87,141 @@ def compute_unity_to_bird_transform(x_edges, y_edges, unity_x, unity_y):
     offset_y = bird_center_y - unity_center_y * scale_y
 
     return scale_x, scale_y, offset_x, offset_y
+
+
+def load_plan_floor_bbox_from_dxf(path_dxf, layer=None, dxf_scale=1000.0):
+    """
+    Извлекает bounding box из слоя плана пола в unity_tracks.dxf.
+    DXF: export_unity_tracks_to_dxf (PLAN_FLOOR) или export_unity_plan_to_dxf (FLOOR).
+    dxf_scale: DXF единицы / Unity метры. 1000 = DXF в мм. 1 = DXF уже в метрах.
+    Возвращает (unity_x_min, unity_x_max, unity_y_min, unity_y_max) в Unity метрах.
+    """
+    if layer is None:
+        layer = "PLAN_FLOOR"  # export_unity_tracks_to_dxf
+    if ezdxf is None:
+        raise ImportError("Установите ezdxf: pip install ezdxf")
+    path = Path(path_dxf).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"DXF не найден: {path}")
+    doc = ezdxf.readfile(str(path))
+    msp = doc.modelspace()
+    xs, ys = [], []
+    for e in msp.query("LWPOLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer:
+            continue
+        try:
+            pts = list(e.get_points("xy"))
+        except Exception:
+            continue
+        for i in range(len(pts)):
+            xs.append(float(pts[i][0]) / dxf_scale)
+            ys.append(float(pts[i][1]) / dxf_scale)
+    for e in msp.query("LINE"):
+        if getattr(e.dxf, "layer", "") != layer:
+            continue
+        try:
+            s, en = e.dxf.start, e.dxf.end
+            xs.append(float(s.x) / dxf_scale)
+            xs.append(float(en.x) / dxf_scale)
+            ys.append(float(s.y) / dxf_scale)
+            ys.append(float(en.y) / dxf_scale)
+        except Exception:
+            continue
+    if not xs or not ys:
+        if layer == "PLAN_FLOOR":
+            return load_plan_floor_bbox_from_dxf(path_dxf, layer="FLOOR", dxf_scale=dxf_scale)
+        raise ValueError(f"Слой {layer} пуст или не найден в {path}")
+    x_min, x_max = float(np.min(xs)), float(np.max(xs))
+    y_min, y_max = float(np.min(ys)), float(np.max(ys))
+    span = max(x_max - x_min, y_max - y_min)
+    if span < 1.0 and dxf_scale == 1000.0:
+        return load_plan_floor_bbox_from_dxf(path_dxf, layer=layer, dxf_scale=1.0)
+    return x_min, x_max, y_min, y_max
+
+
+def compute_unity_to_bird_transform_from_floor_plan(
+    x_edges, y_edges, unity_plan_dxf_path, layer="PLAN_FLOOR", dxf_scale=1000.0
+):
+    """
+    Возвращает (scale_x, scale_y, offset_x, offset_y) для Unity -> BIRD метры.
+    Референс Unity: bbox из PLAN_FLOOR в unity_tracks.dxf (не по трекам).
+    Референс BIRD: x_edges, y_edges из density_floor0.json.
+    """
+    unity_x_min, unity_x_max, unity_y_min, unity_y_max = load_plan_floor_bbox_from_dxf(
+        unity_plan_dxf_path, layer, dxf_scale
+    )
+    bird_x_min, bird_x_max = float(x_edges[0]), float(x_edges[-1])
+    bird_y_min, bird_y_max = float(y_edges[0]), float(y_edges[-1])
+    bird_center_x = (bird_x_min + bird_x_max) / 2
+    bird_center_y = (bird_y_min + bird_y_max) / 2
+    unity_center_x = (unity_x_min + unity_x_max) / 2
+    unity_center_y = (unity_y_min + unity_y_max) / 2
+    span_unity_x = unity_x_max - unity_x_min
+    span_unity_y = unity_y_max - unity_y_min
+    span_bird_x = bird_x_max - bird_x_min
+    span_bird_y = bird_y_max - bird_y_min
+    scale_x = span_bird_x / span_unity_x if span_unity_x > 1e-6 else 1.0
+    scale_y = span_bird_y / span_unity_y if span_unity_y > 1e-6 else 1.0
+    offset_x = bird_center_x - unity_center_x * scale_x
+    offset_y = bird_center_y - unity_center_y * scale_y
+    return scale_x, scale_y, offset_x, offset_y
+
+
+def load_unity_floor_plan_segments_in_bird_coords(
+    path_dxf, scale_x, scale_y, offset_x, offset_y, layers=None, dxf_scale=1000.0
+):
+    """
+    Загружает план пола и стен из unity_tracks.dxf и преобразует в BIRD метры.
+    layers: список слоёв (PLAN_FLOOR, PLAN_WALLS или FLOOR, WALLS). По умолчанию оба.
+    Возвращает list of (x1, y1, x2, y2) для отрисовки.
+    """
+    if layers is None:
+        layers = ["PLAN_FLOOR", "PLAN_WALLS", "FLOOR", "WALLS"]
+    if ezdxf is None:
+        return []
+    path = Path(path_dxf).resolve()
+    if not path.exists():
+        return []
+    doc = ezdxf.readfile(str(path))
+    msp = doc.modelspace()
+    segments_raw = []
+    for layer in layers:
+        for e in msp.query("LWPOLYLINE"):
+            if getattr(e.dxf, "layer", "") != layer:
+                continue
+            try:
+                pts = list(e.get_points("xy"))
+            except Exception:
+                continue
+            for i in range(len(pts) - 1):
+                x1, y1 = float(pts[i][0]) / dxf_scale, float(pts[i][1]) / dxf_scale
+                x2, y2 = float(pts[i + 1][0]) / dxf_scale, float(pts[i + 1][1]) / dxf_scale
+                segments_raw.append((x1, y1, x2, y2))
+        for e in msp.query("LINE"):
+            if getattr(e.dxf, "layer", "") != layer:
+                continue
+            try:
+                s, en = e.dxf.start, e.dxf.end
+                x1, y1 = float(s.x) / dxf_scale, float(s.y) / dxf_scale
+                x2, y2 = float(en.x) / dxf_scale, float(en.y) / dxf_scale
+                segments_raw.append((x1, y1, x2, y2))
+            except Exception:
+                continue
+    if not segments_raw:
+        return []
+    all_x = [s[0] for s in segments_raw] + [s[2] for s in segments_raw]
+    all_y = [s[1] for s in segments_raw] + [s[3] for s in segments_raw]
+    span = max(np.max(all_x) - np.min(all_x), np.max(all_y) - np.min(all_y))
+    if span < 1.0 and dxf_scale == 1000.0:
+        return load_unity_floor_plan_segments_in_bird_coords(
+            path_dxf, scale_x, scale_y, offset_x, offset_y, layers=layers, dxf_scale=1.0
+        )
+    segments_bird = []
+    for x1, y1, x2, y2 in segments_raw:
+        x1m, y1m = _unity_to_bird(np.array([x1]), np.array([y1]), scale_x, scale_y, offset_x, offset_y)
+        x2m, y2m = _unity_to_bird(np.array([x2]), np.array([y2]), scale_x, scale_y, offset_x, offset_y)
+        segments_bird.append((float(x1m[0]), float(y1m[0]), float(x2m[0]), float(y2m[0])))
+    return segments_bird
 
 
 def load_trajectories(folder_path: Path, floor_number: int = 0):
@@ -165,11 +307,13 @@ def compute_density_analysis(
     offset_y=None,
     scale_x=None,
     scale_y=None,
+    unity_plan_dxf_path=None,
 ):
     """
     Вычисляет density, ToP и Stop duration по трекам Unity на сетке BIRD.
     Возвращает dict с heatmap, top_matrix, x_edges, y_edges, stop_duration_stats, n_traj.
-    По умолчанию использует scale+offset для выравнивания Unity bbox с BIRD grid.
+    Если unity_plan_dxf_path задан — референс берется из PLAN_FLOOR (plan и треки выровнены).
+    Иначе — по bbox треков (устаревший вариант).
     """
     path = Path(trajectories_folder).resolve()
     trajectories, all_x, all_y, n_traj = load_trajectories(path, 0)
@@ -177,7 +321,13 @@ def compute_density_analysis(
     nx, ny = len(x_edges) - 1, len(y_edges) - 1
 
     if scale_x is None or scale_y is None or offset_x is None or offset_y is None:
-        sx, sy, ox, oy = compute_unity_to_bird_transform(x_edges, y_edges, all_x, all_y)
+        plan_dxf = Path(unity_plan_dxf_path).resolve() if unity_plan_dxf_path else None
+        if plan_dxf and plan_dxf.exists():
+            sx, sy, ox, oy = compute_unity_to_bird_transform_from_floor_plan(
+                x_edges, y_edges, str(plan_dxf)
+            )
+        else:
+            sx, sy, ox, oy = compute_unity_to_bird_transform(x_edges, y_edges, all_x, all_y)
         scale_x = scale_x if scale_x is not None else sx
         scale_y = scale_y if scale_y is not None else sy
         offset_x = offset_x if offset_x is not None else ox
@@ -232,10 +382,16 @@ def main():
         default=str(DEFAULT_GRID_FILE),
         help=f"JSON с сеткой BIRD (x_edges_m, y_edges_m) (по умолчанию: {DEFAULT_GRID_FILE})",
     )
-    parser.add_argument("--offset-x", type=float, default=None, help="Ручное смещение Unity→BIRD по X (м)")
-    parser.add_argument("--offset-y", type=float, default=None, help="Ручное смещение Unity→BIRD по Y (м)")
-    parser.add_argument("--scale-x", type=float, default=None, help="Ручной масштаб Unity→BIRD по X")
-    parser.add_argument("--scale-y", type=float, default=None, help="Ручной масштаб Unity→BIRD по Y")
+    parser.add_argument("--offset-x", type=float, default=None, help="Ручное смещение Unity->BIRD по X (м)")
+    parser.add_argument("--offset-y", type=float, default=None, help="Ручное смещение Unity->BIRD по Y (м)")
+    parser.add_argument("--scale-x", type=float, default=None, help="Ручной масштаб Unity->BIRD по X")
+    parser.add_argument("--scale-y", type=float, default=None, help="Ручной масштаб Unity->BIRD по Y")
+    parser.add_argument(
+        "--unity-plan-dxf",
+        type=str,
+        default=str(DEFAULT_UNITY_PLAN_DXF),
+        help=f"DXF с PLAN_FLOOR для референса (по умолчанию: {DEFAULT_UNITY_PLAN_DXF})",
+    )
     parser.add_argument("--floor", type=int, default=0, help="Номер этажа (0)")
     args = parser.parse_args()
     trajectories_folder = Path(args.trajectories_folder)
@@ -250,8 +406,16 @@ def main():
     x_edges, y_edges = load_common_grid(grid_path)
     nx, ny = len(x_edges) - 1, len(y_edges) - 1
 
-    # Трансформация Unity → BIRD (scale + offset)
-    auto_sx, auto_sy, auto_ox, auto_oy = compute_unity_to_bird_transform(x_edges, y_edges, all_x, all_y)
+    # Трансформация Unity -> BIRD (scale + offset). Референс: PLAN_FLOOR из DXF или bbox треков.
+    plan_dxf = Path(args.unity_plan_dxf) if args.unity_plan_dxf else None
+    if plan_dxf and plan_dxf.exists():
+        auto_sx, auto_sy, auto_ox, auto_oy = compute_unity_to_bird_transform_from_floor_plan(
+            x_edges, y_edges, str(plan_dxf.resolve())
+        )
+        print(f"  Референс: PLAN_FLOOR из {plan_dxf}")
+    else:
+        auto_sx, auto_sy, auto_ox, auto_oy = compute_unity_to_bird_transform(x_edges, y_edges, all_x, all_y)
+        print(f"  Референс: bbox треков (unity-plan-dxf не найден)")
     scale_x = args.scale_x if args.scale_x is not None else auto_sx
     scale_y = args.scale_y if args.scale_y is not None else auto_sy
     offset_x = args.offset_x if args.offset_x is not None else auto_ox
@@ -332,6 +496,7 @@ def main():
             "trajectories_folder": str(trajectories_folder.resolve()),
             "source": "Unity_simulation",
             "grid_source": str(grid_path.resolve()),
+            "unity_plan_dxf": str(plan_dxf.resolve()) if plan_dxf and plan_dxf.exists() else None,
             "unity_to_bird_scale_x": round(scale_x, 6),
             "unity_to_bird_scale_y": round(scale_y, 6),
             "unity_to_bird_offset_x": round(offset_x, 4),

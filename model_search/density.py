@@ -19,12 +19,32 @@ BASE = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE.parent
 TRAJECTORIES_FOLDER = PROJECT_ROOT / "bird-dataset-main/data/normalized_trajectories"
 PLAN_FILE = PROJECT_ROOT / "bird-dataset-main/data/NMFA_3floors_plan.json"
+PATH_DXF = BASE / "Floor_0.dxf"
+LAYER_FLOOR_PLAN = "Floor_plan"
 OUTPUT_CSV = BASE / "density_floor0.csv"
 OUTPUT_JSON = BASE / "density_floor0.json"
 
 CELL_SIZE_M = 1.0  # размер ячейки в метрах
 SCALE_FACTOR = 55.07 / 5401  # м/единица координат (как в create_trajectories_heatmap)
 LONG_STOP_THRESHOLD_SEC = 30.0  # порог для "длинной" остановки (proportion of long stops)
+
+
+def get_floor_plan_bbox(path_dxf=None, layer=None):
+    """
+    Возвращает bbox плана этажа (min_x, max_x, min_y, max_y) в метрах.
+    Сетка строится по всему плану, а не только по области треков.
+    """
+    from plot_density_grids import load_floor_plan_segments
+    path = Path(path_dxf) if path_dxf else PATH_DXF
+    layer = layer or LAYER_FLOOR_PLAN
+    if not path.exists():
+        return None
+    segments = load_floor_plan_segments(path, layer)
+    if not segments:
+        return None
+    all_x = [s[0] for s in segments] + [s[2] for s in segments]
+    all_y = [s[1] for s in segments] + [s[3] for s in segments]
+    return float(np.min(all_x)), float(np.max(all_x)), float(np.min(all_y)), float(np.max(all_y))
 
 
 def load_floor0_trajectories(trajectories_folder=None):
@@ -97,17 +117,26 @@ def compute_density_analysis(
     scale_factor=None,
     floor_number=0,
     long_stop_threshold_sec=30.0,
+    floor_plan_dxf=None,
 ):
     """
     Вычисляет density, Time of Presence и Stop duration по трекам BIRD.
+    Сетка строится по bbox плана этажа (Floor_0.dxf), а не по трекам.
     Возвращает dict с heatmap, top_matrix, x_edges, y_edges, stop_duration_stats, n_traj.
     """
     scale = scale_factor if scale_factor is not None else SCALE_FACTOR
     trajectories, all_x, all_y, n_traj = load_floor0_trajectories(trajectories_folder)
     x_m = np.array(all_x) * scale
     y_m = np.array(all_y) * scale
-    min_x_m, max_x_m = x_m.min(), x_m.max()
-    min_y_m, max_y_m = y_m.min(), y_m.max()
+
+    # Сетка по bbox плана этажа (вся территория), а не только по трекам
+    bbox = get_floor_plan_bbox(floor_plan_dxf)
+    if bbox is not None:
+        min_x_m, max_x_m, min_y_m, max_y_m = bbox
+    else:
+        min_x_m, max_x_m = x_m.min(), x_m.max()
+        min_y_m, max_y_m = y_m.min(), y_m.max()
+
     x_edges = np.arange(min_x_m, max_x_m + cell_size_m * 0.5, cell_size_m)
     y_edges = np.arange(min_y_m, max_y_m + cell_size_m * 0.5, cell_size_m)
     heatmap, x_edges, y_edges = np.histogram2d(x_m, y_m, bins=[x_edges, y_edges])
@@ -147,8 +176,16 @@ def main():
     # Конвертируем в метры
     x_m = all_x * SCALE_FACTOR
     y_m = all_y * SCALE_FACTOR
-    min_x_m, max_x_m = x_m.min(), x_m.max()
-    min_y_m, max_y_m = y_m.min(), y_m.max()
+
+    # Сетка по bbox плана этажа (вся территория)
+    bbox = get_floor_plan_bbox()
+    if bbox is not None:
+        min_x_m, max_x_m, min_y_m, max_y_m = bbox
+        print(f"  Сетка по плану этажа: x=[{min_x_m:.1f}, {max_x_m:.1f}], y=[{min_y_m:.1f}, {max_y_m:.1f}]")
+    else:
+        min_x_m, max_x_m = x_m.min(), x_m.max()
+        min_y_m, max_y_m = y_m.min(), y_m.max()
+        print("  План не найден, сетка по трекам")
 
     # Сетка 1 м
     x_edges = np.arange(min_x_m, max_x_m + CELL_SIZE_M * 0.5, CELL_SIZE_M)

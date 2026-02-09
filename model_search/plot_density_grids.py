@@ -102,16 +102,25 @@ def plot_plan_with_grid(x_edges, y_edges, segments, title, ax):
     ax.grid(False)
 
 
-def plot_plan_with_grid_and_tracks(ax, segments, x_edges, y_edges, trajectories_list, title, track_color="tab:blue", track_alpha=0.4):
+def plot_plan_with_grid_and_tracks(
+    ax, segments, x_edges, y_edges, trajectories_list, title,
+    track_color="tab:blue", track_alpha=0.4, extra_segments=None, extra_segments_color="red",
+):
     """
     Рисует план этажа, сетку и треки.
     trajectories_list: list of [(x_m, y_m), ...] — каждая траектория в метрах.
+    extra_segments: list of (x1,y1,x2,y2) — доп. план (напр. из unity_tracks.dxf), рисуется extra_segments_color.
     """
     ax.set_facecolor("white")
 
     # План этажа
     for x1, y1, x2, y2 in segments:
         ax.plot([x1, x2], [y1, y2], "k-", linewidth=1.2)
+
+    # Доп. план (напр. Unity)
+    if extra_segments:
+        for x1, y1, x2, y2 in extra_segments:
+            ax.plot([x1, x2], [y1, y2], "-", color=extra_segments_color, linewidth=1.5, alpha=0.9, zorder=10)
 
     # Сетка 1×1 м
     for x in x_edges:
