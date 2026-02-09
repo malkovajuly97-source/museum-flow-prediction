@@ -27,11 +27,12 @@ SCALE_FACTOR = 55.07 / 5401  # м/единица координат (как в c
 LONG_STOP_THRESHOLD_SEC = 30.0  # порог для "длинной" остановки (proportion of long stops)
 
 
-def load_floor0_trajectories():
+def load_floor0_trajectories(trajectories_folder=None):
     """Загружает все треки этажа 0. Возвращает (list of DataFrame, all_x, all_y, n_traj)."""
-    csv_files = glob.glob(str(TRAJECTORIES_FOLDER / "*.csv"))
+    folder = Path(trajectories_folder) if trajectories_folder else TRAJECTORIES_FOLDER
+    csv_files = glob.glob(str(folder / "*.csv"))
     if not csv_files:
-        raise FileNotFoundError(f"Нет CSV в {TRAJECTORIES_FOLDER}")
+        raise FileNotFoundError(f"Нет CSV в {folder}")
     trajectories = []
     all_x, all_y = [], []
     for csv_file in csv_files:
@@ -60,17 +61,18 @@ def get_cell_indices(x_m, y_m, x_edges, y_edges):
     return ix, iy
 
 
-def compute_time_of_presence(trajectories, x_edges, y_edges, nx, ny):
+def compute_time_of_presence(trajectories, x_edges, y_edges, nx, ny, scale_factor=None):
     """
     ToP(cell) = Σ (T_exit - T_entry) по всем пребываниям.
     Для каждой траектории: runs последовательных точек в одной ячейке -> ToP_run = t_last - t_first.
     Возвращает (top_matrix, stop_durations) — список длительностей остановок (run из 2+ точек).
     """
+    sf = scale_factor if scale_factor is not None else SCALE_FACTOR
     top_matrix = np.zeros((ny, nx))
     stop_durations = []
     for df in trajectories:
-        x_m = df["x"].astype(float).values * SCALE_FACTOR
-        y_m = df["y"].astype(float).values * SCALE_FACTOR
+        x_m = df["x"].astype(float).values * sf
+        y_m = df["y"].astype(float).values * sf
         ts = df["timestamp"].astype(float).values
         ix, iy = get_cell_indices(x_m, y_m, x_edges, y_edges)
         # Находим runs последовательных точек в одной ячейке
@@ -87,6 +89,54 @@ def compute_time_of_presence(trajectories, x_edges, y_edges, nx, ny):
                     stop_durations.append(top_run)
             i = j
     return top_matrix, stop_durations
+
+
+def compute_density_analysis(
+    trajectories_folder,
+    cell_size_m=1.0,
+    scale_factor=None,
+    floor_number=0,
+    long_stop_threshold_sec=30.0,
+):
+    """
+    Вычисляет density, Time of Presence и Stop duration по трекам BIRD.
+    Возвращает dict с heatmap, top_matrix, x_edges, y_edges, stop_duration_stats, n_traj.
+    """
+    scale = scale_factor if scale_factor is not None else SCALE_FACTOR
+    trajectories, all_x, all_y, n_traj = load_floor0_trajectories(trajectories_folder)
+    x_m = np.array(all_x) * scale
+    y_m = np.array(all_y) * scale
+    min_x_m, max_x_m = x_m.min(), x_m.max()
+    min_y_m, max_y_m = y_m.min(), y_m.max()
+    x_edges = np.arange(min_x_m, max_x_m + cell_size_m * 0.5, cell_size_m)
+    y_edges = np.arange(min_y_m, max_y_m + cell_size_m * 0.5, cell_size_m)
+    heatmap, x_edges, y_edges = np.histogram2d(x_m, y_m, bins=[x_edges, y_edges])
+    heatmap = heatmap.T
+    ny, nx = heatmap.shape
+    top_matrix, stop_durations = compute_time_of_presence(
+        trajectories, x_edges, y_edges, nx, ny, scale_factor=scale
+    )
+    stop_duration_stats = {}
+    if stop_durations:
+        arr = np.array(stop_durations)
+        stop_duration_stats = {
+            "n_stops": len(stop_durations),
+            "mean_sec": round(float(np.mean(arr)), 2),
+            "median_sec": round(float(np.median(arr)), 2),
+            "p75_sec": round(float(np.percentile(arr, 75)), 2),
+            "p90_sec": round(float(np.percentile(arr, 90)), 2),
+            "long_stop_threshold_sec": long_stop_threshold_sec,
+            "proportion_long_stops": round(float(np.mean(arr >= long_stop_threshold_sec)), 4),
+        }
+    return {
+        "heatmap": heatmap,
+        "top_matrix": top_matrix,
+        "x_edges": x_edges,
+        "y_edges": y_edges,
+        "stop_duration_stats": stop_duration_stats,
+        "n_trajectories": n_traj,
+        "n_points": len(all_x),
+    }
 
 
 def main():
@@ -165,6 +215,12 @@ def main():
         "matrix_time_of_presence": [[round(float(v), 2) for v in row] for row in top_matrix],
         "x_edges_m": [round(float(x), 4) for x in x_edges],
         "y_edges_m": [round(float(y), 4) for y in y_edges],
+        "grid_bounds": {
+            "min_x_m": round(float(x_edges[0]), 4),
+            "max_x_m": round(float(x_edges[-1]), 4),
+            "min_y_m": round(float(y_edges[0]), 4),
+            "max_y_m": round(float(y_edges[-1]), 4),
+        },
         "cell_size_m": CELL_SIZE_M,
         "n_cells_x": nx,
         "n_cells_y": ny,

@@ -36,6 +36,13 @@ public class AgentSpawnManager : MonoBehaviour
     [Tooltip("Максимум точек маршрута на одного агента.")]
     public int pointsPerAgentMax = 25;
 
+    [Header("Ожидание у картины")]
+    [Tooltip("Минимальное время (сек) у каждой картины.")]
+    public float waitTimeMin = 1.4f;
+
+    [Tooltip("Максимальное время (сек) у каждой картины.")]
+    public float waitTimeMax = 3f;
+
     void Start()
     {
         if (agentPrefab == null)
@@ -103,6 +110,8 @@ public class AgentSpawnManager : MonoBehaviour
                 path.numberOfPointsToVisit = Random.Range(pointsPerAgentMin, pointsPerAgentMax + 1);
                 path.exitPoints = exits;
                 path.loop = false; // после 5 точек — к выходу, не зацикливать
+                path.waitTimeMin = waitTimeMin;
+                path.waitTimeMax = waitTimeMax;
             }
 
             float interval = Random.Range(spawnIntervalMin, spawnIntervalMax);

@@ -28,19 +28,11 @@ public class AgentPath : MonoBehaviour
     [Range(1, 10)]
     public int chooseFromNearestK = 5;
 
-    [Tooltip("Время ожидания (сек) у каждой точки. Если длина меньше числа точек, для остальных используется defaultWaitTime.")]
-    public float[] waitTimes;
+    [Tooltip("Время ожидания (сек) у каждой картины — случайное от min до max.")]
+    public float waitTimeMin = 1.4f;
 
-    [Tooltip("Время ожидания по умолчанию (сек), если waitTimes не задан для точки.")]
-    public float defaultWaitTime = 2f;
-
-    [Tooltip("Минимальный множитель для времени ожидания (базовое время × Random(min..max)).")]
-    [Range(0.5f, 1f)]
-    public float waitRandomMin = 0.7f;
-
-    [Tooltip("Максимальный множитель для времени ожидания.")]
-    [Range(1f, 2.5f)]
-    public float waitRandomMax = 1.5f;
+    [Tooltip("Максимальное время ожидания (сек) у картины.")]
+    public float waitTimeMax = 3f;
 
     [Tooltip("Дистанция до точки, при которой считаем, что агент «прибыл».")]
     public float arrivalDistance = 0.5f;
@@ -261,11 +253,7 @@ public class AgentPath : MonoBehaviour
 
         if (!_agent.pathPending && _agent.remainingDistance <= arrivalDistance)
         {
-            float baseWait = defaultWaitTime;
-            if (waitTimes != null && _currentIndex < waitTimes.Length)
-                baseWait = waitTimes[_currentIndex];
-            float wait = baseWait * Random.Range(waitRandomMin, waitRandomMax);
-
+            float wait = Random.Range(waitTimeMin, waitTimeMax);
             StartCoroutine(WaitThenNext(wait));
         }
     }

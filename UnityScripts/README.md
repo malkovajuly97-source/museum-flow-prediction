@@ -10,7 +10,7 @@
 **Назначение:** Управление движением агента по точкам аттракций с помощью NavMeshAgent.
 
 **Функции:**
-- Обход точек (картин) по маршруту (по умолчанию 5 объектов)
+- Обход точек (картин) по маршруту. Ожидание у картины: Random(waitTimeMin..waitTimeMax) сек
 - Поддержка `allPointsContainer` — выбор случайных N точек при старте
 - **preferNeighbors** — следующий пункт выбирается из K ближайших не посещённых (логично для музея)
 - Избегание толпы: пропуск точки, если рядом ≥ N агентов
@@ -29,7 +29,7 @@
 - Передача контейнера аттракций и точек выхода каждому агенту
 - Случайное количество точек маршрута на агента (min..max, по умолчанию 5–25)
 
-**Настройка:** Префаб агента, Attractions Container, Spawn Points, Exit Points (5). Если Exit Points пуст — автоматически ищет объект Exit и его дочерние (лестницы).
+**Настройка:** Префаб агента, Attractions Container, Spawn Points, Exit Points (5). Ожидание у картины (waitTimeMin, waitTimeMax — сек). Если Exit Points пуст — автоматически ищет объект Exit и его дочерние (лестницы).
 
 ---
 
@@ -72,15 +72,16 @@
 ---
 
 ### TrackRecorder.cs
-**Назначение:** Запись треков агентов и плана этажа в JSON (отдельно от PlanAndTrackExporter).
+**Назначение:** Запись треков агентов и плана этажа в JSON и CSV формате BIRD.
 
 **Функции:**
-- Запись позиций агентов (AgentPath) по интервалу
-- Экспорт: trajectories, floor_outline/floor_bounds, wall_rects, plan_points
+- Запись позиций агентов (AgentPath) по интервалу (с timestamp)
+- Экспорт JSON: trajectories, floor_outline/floor_bounds, wall_rects, plan_points
+- Экспорт CSV (BIRD): `timestamp,x,y,floorNumber` — один файл на траекторию в подпапку `unity_tracks_bird/`
 
-**Использование:** ПКМ → «Сохранить треки» или клавиша **S**
+**Использование:** ПКМ → «Сохранить треки» или клавиша **S** (JSON + CSV при `exportBirdsCsvOnSave`). ПКМ → «Экспорт в CSV (BIRD)» — только CSV.
 
-**Выход:** `unity_tracks.json`
+**Выход:** `unity_tracks.json`, `unity_tracks_bird/*_traj.csv`
 
 ---
 

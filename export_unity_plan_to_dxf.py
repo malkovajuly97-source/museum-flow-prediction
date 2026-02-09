@@ -1,9 +1,13 @@
 """
 Конвертирует unity_plan.json (из Unity ExportPlanToDxf) в DXF для Rhino.
+Unity: метры → DXF: миллиметры (для Rhino с Model units = Millimeters).
 Запуск: python export_unity_plan_to_dxf.py <путь_к_json> [путь_к_dxf]
-Если путь к DXF не указан — сохраняет рядом с JSON.
 """
 import json
+
+# Unity (метры) → Rhino (миллиметры)
+SCALE = 1000
+
 import sys
 from pathlib import Path
 
@@ -65,7 +69,7 @@ def main():
     doc.layers.new(name="WALLS", dxfattribs={"color": 7})
 
     if floor_outline:
-        pts = [(p.get("x", 0), p.get("y", 0), 0) for p in floor_outline]
+        pts = [(p.get("x", 0) * SCALE, p.get("y", 0) * SCALE, 0) for p in floor_outline]
         if len(pts) >= 3:
             # Порядок точек из Unity уже правильный — не сортируем, иначе получаются серые диагонали
             msp.add_lwpolyline(points=pts, close=True, dxfattribs={"layer": "FLOOR", "color": 8})
@@ -73,13 +77,13 @@ def main():
     for w in wall_rects:
         a, b = w.get("minX", 0), w.get("minZ", 0)
         c, d = w.get("maxX", 0), w.get("maxZ", 0)
-        rect = [(a, b, 0), (c, b, 0), (c, d, 0), (a, d, 0)]
+        rect = [(a * SCALE, b * SCALE, 0), (c * SCALE, b * SCALE, 0), (c * SCALE, d * SCALE, 0), (a * SCALE, d * SCALE, 0)]
         msp.add_lwpolyline(points=rect, close=True, dxfattribs={"layer": "WALLS", "color": 7})
 
     for wo in wall_outlines:
         pts = wo.get("points") or []
         if len(pts) >= 2:
-            coords = [(p.get("x", 0), p.get("y", 0), 0) for p in pts]
+            coords = [(p.get("x", 0) * SCALE, p.get("y", 0) * SCALE, 0) for p in pts]
             msp.add_lwpolyline(points=coords, close=len(coords) >= 3, dxfattribs={"layer": "WALLS", "color": 7})
 
     out_name = "unity_plan.dxf" if "tracks" in json_path.stem.lower() else (json_path.stem + ".dxf")

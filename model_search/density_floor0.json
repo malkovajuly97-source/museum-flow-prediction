@@ -7371,6 +7371,12 @@
     51.189,
     52.189
   ],
+  "grid_bounds": {
+    "min_x_m": 0.3086,
+    "max_x_m": 69.3086,
+    "min_y_m": 1.189,
+    "max_y_m": 52.189
+  },
   "cell_size_m": 1.0,
   "n_cells_x": 69,
   "n_cells_y": 51,

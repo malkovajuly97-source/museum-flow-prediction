@@ -26,7 +26,7 @@ public class TrackRecorder : MonoBehaviour
     [Range(0.1f, 2f)]
     public float recordInterval = 0.5f;
 
-    [Tooltip("Клавиша для сохранения треков в JSON.")]
+    [Tooltip("Клавиша для сохранения треков (JSON и при включённой опции — CSV BIRD).")]
     public KeyCode saveKey = KeyCode.S;
 
     [Header("Сохранение")]
@@ -36,7 +36,17 @@ public class TrackRecorder : MonoBehaviour
     [Tooltip("Сохранять в StreamingAssets (true) или persistentDataPath (false).")]
     public bool saveToStreamingAssets = false;
 
-    Dictionary<string, List<Vector2>> _tracks = new Dictionary<string, List<Vector2>>();
+    [Tooltip("Подпапка для экспорта CSV в формате BIRD.")]
+    public string outputCsvFolder = "unity_tracks_bird";
+
+    [Tooltip("Значение floorNumber в CSV (0 для этажа 0).")]
+    public int floorNumber = 0;
+
+    [Tooltip("При сохранении (S) также экспортировать CSV в формате BIRD.")]
+    public bool exportBirdsCsvOnSave = true;
+
+    class TrackPoint { public float time; public Vector2 pos; }
+    Dictionary<string, List<TrackPoint>> _tracks = new Dictionary<string, List<TrackPoint>>();
     float _lastRecordTime;
     Bounds _floorWorldBounds;
 
@@ -119,10 +129,9 @@ public class TrackRecorder : MonoBehaviour
             if (ap == null) continue;
             string id = ap.gameObject.name;
             if (string.IsNullOrEmpty(id)) id = "Agent_" + ap.GetInstanceID();
-            if (!_tracks.ContainsKey(id)) _tracks[id] = new List<Vector2>();
+            if (!_tracks.ContainsKey(id)) _tracks[id] = new List<TrackPoint>();
             Vector3 pos = ap.transform.position;
-            Vector2 pt = new Vector2(pos.x, pos.z);
-            _tracks[id].Add(pt);
+            _tracks[id].Add(new TrackPoint { time = Time.time, pos = new Vector2(pos.x, pos.z) });
         }
     }
 
@@ -169,8 +178,8 @@ public class TrackRecorder : MonoBehaviour
         {
             if (kv.Value.Count < 2) continue;
             var pts = new List<Point2D>();
-            foreach (var p in kv.Value)
-                pts.Add(new Point2D { x = p.x, y = p.y });
+            foreach (var pt in kv.Value)
+                pts.Add(new Point2D { x = pt.pos.x, y = pt.pos.y });
             list.Add(new TrajectoryData { trajectory_id = kv.Key, points = pts });
         }
         string dir = saveToStreamingAssets ? Application.streamingAssetsPath : Application.persistentDataPath;
@@ -237,6 +246,7 @@ public class TrackRecorder : MonoBehaviour
             string json = JsonUtility.ToJson(wrapper, true);
             File.WriteAllText(path, json);
             Debug.Log($"TrackRecorder: сохранено {list.Count} треков.\nПуть: {path}\n(Скопируй путь и вставь в проводник)");
+            if (exportBirdsCsvOnSave) SaveTracksToBirdsCsv();
             if (list.Count == 0 && _tracks.Count > 0)
                 Debug.LogWarning($"TrackRecorder: записано {_tracks.Count} агентов, но у всех меньше 2 точек. Подожди, пока агенты походят.");
             if (list.Count == 0 && _tracks.Count == 0)
@@ -248,15 +258,49 @@ public class TrackRecorder : MonoBehaviour
         }
     }
 
-    [Serializable]
+    [ContextMenu("Экспорт в CSV (BIRD)")]
+    public void SaveTracksToBirdsCsv()
+    {
+        string baseDir = saveToStreamingAssets ? Application.streamingAssetsPath : Application.persistentDataPath;
+        string csvDir = Path.Combine(baseDir, outputCsvFolder);
+        try
+        {
+            if (!Directory.Exists(csvDir)) Directory.CreateDirectory(csvDir);
+            int count = 0;
+            foreach (var kv in _tracks)
+            {
+                if (kv.Value.Count < 2) continue;
+                float t0 = kv.Value[0].time;
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("timestamp,x,y,floorNumber");
+                foreach (var pt in kv.Value)
+                {
+                    float timestamp = pt.time - t0;
+                    sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0},{1},{2},{3}", timestamp, pt.pos.x, pt.pos.y, floorNumber));
+                }
+                string safeId = string.Join("_", kv.Key.Split(Path.GetInvalidFileNameChars()));
+                string filePath = Path.Combine(csvDir, safeId + "_traj.csv");
+                File.WriteAllText(filePath, sb.ToString());
+                count++;
+            }
+            if (count > 0)
+                Debug.Log($"TrackRecorder: экспорт CSV: {count} треков.\nПапка: {csvDir}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"TrackRecorder: ошибка экспорта CSV: {ex.Message}\nПапка: {csvDir}");
+        }
+    }
+
+    [System.Serializable]
     class Point2D { public float x; public float y; }
-    [Serializable]
+    [System.Serializable]
     class TrajectoryData { public string trajectory_id; public List<Point2D> points; }
-    [Serializable]
+    [System.Serializable]
     class FloorBoundsData { public float minX, minZ, maxX, maxZ; }
-    [Serializable]
+    [System.Serializable]
     class WallRectData { public float minX, minZ, maxX, maxZ; }
-    [Serializable]
+    [System.Serializable]
     class TrajectoryJsonWrapper
     {
         public List<TrajectoryData> trajectories;

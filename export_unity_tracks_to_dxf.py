@@ -1,9 +1,12 @@
 """
 Экспорт треков и плана этажа из Unity (unity_tracks.json) в DXF.
-Всё в координатах Unity — треки и план совпадают по масштабу.
+Unity: метры → DXF: миллиметры (для Rhino с Model units = Millimeters).
 Запуск: python export_unity_tracks_to_dxf.py [путь_к_json]
 """
 import json
+
+# Unity (метры) → Rhino (миллиметры)
+SCALE = 1000
 import sys
 from pathlib import Path
 
@@ -120,7 +123,7 @@ def main():
 
         mnx = mxx = mnz = mxz = None
         if floor_outline:
-            pts = [(p.get("x", 0), p.get("y", 0), 0) for p in floor_outline]
+            pts = [(p.get("x", 0) * SCALE, p.get("y", 0) * SCALE, 0) for p in floor_outline]
             if len(pts) >= 3:
                 msp.add_lwpolyline(points=pts, close=True, dxfattribs={"layer": "PLAN_FLOOR", "color": 8})
         elif floor_bounds:
@@ -129,7 +132,7 @@ def main():
             mxx = floor_bounds.get("maxX", 0)
             mxz = floor_bounds.get("maxZ", 0)
             if mxx - mnx > 0.01 and mxz - mnz > 0.01:
-                rect = [(mnx, mnz, 0), (mxx, mnz, 0), (mxx, mxz, 0), (mnx, mxz, 0), (mnx, mnz, 0)]
+                rect = [(mnx * SCALE, mnz * SCALE, 0), (mxx * SCALE, mnz * SCALE, 0), (mxx * SCALE, mxz * SCALE, 0), (mnx * SCALE, mxz * SCALE, 0), (mnx * SCALE, mnz * SCALE, 0)]
                 msp.add_lwpolyline(points=rect, dxfattribs={"layer": "PLAN_FLOOR", "color": 8})
 
         fb = floor_bounds or {}
@@ -139,27 +142,27 @@ def main():
             mnx, mxx = min(xs), max(xs)
             mnz, mxz = min(ys), max(ys)
             pad = extent * 0.05
-            rect = [(mnx - pad, mnz - pad, 0), (mxx + pad, mnz - pad, 0),
-                    (mxx + pad, mxz + pad, 0), (mnx - pad, mxz + pad, 0), (mnx - pad, mnz - pad, 0)]
+            rect = [((mnx - pad) * SCALE, (mnz - pad) * SCALE, 0), ((mxx + pad) * SCALE, (mnz - pad) * SCALE, 0),
+                    ((mxx + pad) * SCALE, (mxz + pad) * SCALE, 0), ((mnx - pad) * SCALE, (mxz + pad) * SCALE, 0), ((mnx - pad) * SCALE, (mnz - pad) * SCALE, 0)]
             msp.add_lwpolyline(points=rect, dxfattribs={"layer": "PLAN_FLOOR", "color": 8})
 
         for w in wall_rects:
             a, b = w.get("minX", 0), w.get("minZ", 0)
             c, d = w.get("maxX", 0), w.get("maxZ", 0)
-            rect = [(a, b, 0), (c, b, 0), (c, d, 0), (a, d, 0), (a, b, 0)]
+            rect = [(a * SCALE, b * SCALE, 0), (c * SCALE, b * SCALE, 0), (c * SCALE, d * SCALE, 0), (a * SCALE, d * SCALE, 0), (a * SCALE, b * SCALE, 0)]
             msp.add_lwpolyline(points=rect, dxfattribs={"layer": "PLAN_WALLS", "color": 7})
 
         for wo in wall_outlines:
             pts = wo.get("points") or []
             if len(pts) >= 2:
-                coords = [(p.get("x", 0), p.get("y", 0), 0) for p in pts]
+                coords = [(p.get("x", 0) * SCALE, p.get("y", 0) * SCALE, 0) for p in pts]
                 msp.add_lwpolyline(points=coords, close=len(coords) >= 3, dxfattribs={"layer": "PLAN_WALLS", "color": 7})
 
         # Fallback: convex hull (внешний контур) — только если контур пола не найден
         if not floor_outline and all_pts:
             hull_pts = _convex_hull([(p[0], p[1]) for p in all_pts])
             if len(hull_pts) >= 3:
-                pts3d = [(x, y, 0) for x, y in hull_pts]
+                pts3d = [(x * SCALE, y * SCALE, 0) for x, y in hull_pts]
                 msp.add_lwpolyline(points=pts3d, close=True, dxfattribs={"layer": "PLAN_FLOOR", "color": 8})
 
         print(f"План: пол, стен {len(wall_rects) + len(wall_outlines)}")
@@ -173,9 +176,9 @@ def main():
         if len(pts) < 2:
             continue
         if isinstance(pts[0], dict):
-            coords = [(p["x"], p["y"], 0) for p in pts]
+            coords = [(p["x"] * SCALE, p["y"] * SCALE, 0) for p in pts]
         else:
-            coords = [(p[0], p[1], 0) for p in pts]
+            coords = [(p[0] * SCALE, p[1] * SCALE, 0) for p in pts]
         msp.add_lwpolyline(
             points=coords,
             dxfattribs={"layer": "TRACKS", "color": (i % 7) + 1}
