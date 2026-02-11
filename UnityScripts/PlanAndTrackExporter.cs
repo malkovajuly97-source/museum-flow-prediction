@@ -17,7 +17,7 @@ public class PlanAndTrackExporter : MonoBehaviour
     [Tooltip("Объект пола (Floor) — меш экспортируется как внешний контур.")]
     public Transform floorTransform;
 
-    [Tooltip("Контейнер Walls — родитель со стенами. Или пусто — ищу объекты с \"Wall\" в имени.")]
+    [Tooltip("Контейнер именно СТЕН (объект Walls), не Floor. Если указать Floor — в слой стен попадёт пол.")]
     public Transform wallsContainer;
 
     [Tooltip("Контейнер Attractions (точки притяжения) — экспортируются как plan_points.")]
@@ -35,11 +35,14 @@ public class PlanAndTrackExporter : MonoBehaviour
     public KeyCode saveKey = KeyCode.S;
 
     [Header("Сохранение")]
-    [Tooltip("Имя файла — план и треки в одном JSON.")]
-    public string outputFileName = "unity_plan_and_tracks.json";
+    [Tooltip("Имя DXF-файла (план + треки).")]
+    public string outputFileName = "unity_plan_and_tracks.dxf";
 
     [Tooltip("Сохранять в StreamingAssets (true) или persistentDataPath (false).")]
     public bool saveToStreamingAssets = true;
+
+    [Tooltip("Включать стены в DXF (PLAN_WALLS). Если выключено — в DXF только пол и треки.")]
+    public bool exportWallsToDxf = false;
 
     Dictionary<string, List<Vector2>> _tracks = new Dictionary<string, List<Vector2>>();
     float _lastRecordTime;
@@ -112,7 +115,6 @@ public class PlanAndTrackExporter : MonoBehaviour
     {
         UpdateFloorBounds();
         string dir = saveToStreamingAssets ? Application.streamingAssetsPath : Application.persistentDataPath;
-        string path = Path.Combine(dir, outputFileName);
         try
         {
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
@@ -128,35 +130,17 @@ public class PlanAndTrackExporter : MonoBehaviour
                 wrapper.trajectories.Add(new TrajectoryData { trajectory_id = kv.Key, points = pts });
             }
 
-            // План — контур пола (внутренняя граница пола, не внешний контур стен)
-            // Приоритет: unity_plan.json (от Export_floor_plan) → Floor → floor_bounds
-            var planPath = Path.Combine(dir, "unity_plan.json");
-            if (File.Exists(planPath))
+            // План — контур пола из меша Floor Transform
+            if (floorTransform != null)
             {
-                try
-                {
-                    var planJson = File.ReadAllText(planPath);
-                    var planData = JsonUtility.FromJson<PlanFloorOnly>(planJson);
-                    if (planData?.floor_outline != null && planData.floor_outline.Count >= 3)
-                    {
-                        foreach (var p in planData.floor_outline)
-                            wrapper.floor_outline.Add(new Point2D { x = p.x, y = p.y });
-                    }
-                }
-                catch { }
-            }
-            if (wrapper.floor_outline.Count < 3)
-            {
-                Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
-                var outline = floor != null ? GetMeshOutlineXZ(floor) : null;
+                var outline = GetMeshOutlineXZ(floorTransform);
                 if (outline != null && outline.Count >= 3)
                 {
                     foreach (var p in outline)
                         wrapper.floor_outline.Add(new Point2D { x = p.x, y = p.y });
                 }
             }
-            Transform floorForBounds = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
-            if (wrapper.floor_outline.Count < 3 && floorForBounds != null && _floorWorldBounds.size.sqrMagnitude > 0.0001f)
+            if (wrapper.floor_outline.Count < 3 && floorTransform != null && _floorWorldBounds.size.sqrMagnitude > 0.0001f)
             {
                 wrapper.floor_bounds = new FloorBoundsData
                 {
@@ -196,9 +180,13 @@ public class PlanAndTrackExporter : MonoBehaviour
                 }
             }
 
-            string json = JsonUtility.ToJson(wrapper, true);
-            File.WriteAllText(path, json);
-            Debug.Log($"PlanAndTrackExporter: сохранено {wrapper.trajectories.Count} треков + план в {path}");
+            string dxfPath = Path.Combine(dir, Path.GetFileNameWithoutExtension(outputFileName) + ".dxf");
+            try
+            {
+                WriteDxf(wrapper, dxfPath, exportWallsToDxf);
+                Debug.Log($"PlanAndTrackExporter: DXF сохранён в {dxfPath} ({wrapper.trajectories.Count} треков, план)");
+            }
+            catch (Exception exDxf) { Debug.LogError($"PlanAndTrackExporter DXF: {exDxf.Message}"); }
             if (wrapper.trajectories.Count == 0 && _tracks.Count > 0)
                 Debug.LogWarning("Подожди, пока агенты походят (нужно минимум 2 точки на трек).");
             if (wrapper.trajectories.Count == 0 && _tracks.Count == 0)
@@ -206,17 +194,128 @@ public class PlanAndTrackExporter : MonoBehaviour
         }
         catch (Exception ex)
         {
-            Debug.LogError($"PlanAndTrackExporter: {ex.Message}\nПуть: {path}");
+            Debug.LogError($"PlanAndTrackExporter: {ex.Message}\nПапка: {dir}");
         }
+    }
+
+    /// <summary>Пишет DXF напрямую из тех же данных (метры → мм). Без JSON/Python.</summary>
+    static void WriteDxf(PlanAndTracksData data, string dxfPath, bool includeWalls)
+    {
+        const float scale = 1000f; // Unity m → mm
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine("0");
+        sb.AppendLine("SECTION");
+        sb.AppendLine("2");
+        sb.AppendLine("HEADER");
+        sb.AppendLine("9");
+        sb.AppendLine("$INSUNITS");
+        sb.AppendLine("70");
+        sb.AppendLine("4");
+        sb.AppendLine("0");
+        sb.AppendLine("ENDSEC");
+        sb.AppendLine("0");
+        sb.AppendLine("SECTION");
+        sb.AppendLine("2");
+        sb.AppendLine("TABLES");
+        sb.AppendLine("0");
+        sb.AppendLine("TABLE");
+        sb.AppendLine("2");
+        sb.AppendLine("LAYER");
+        sb.AppendLine("70");
+        sb.AppendLine(includeWalls ? "3" : "2");
+        foreach (var layer in includeWalls ? new[] { ("PLAN_FLOOR", 8), ("PLAN_WALLS", 7), ("TRACKS", 1) } : new[] { ("PLAN_FLOOR", 8), ("TRACKS", 1) })
+        {
+            sb.AppendLine("0"); sb.AppendLine("LAYER");
+            sb.AppendLine("2"); sb.AppendLine(layer.Item1);
+            sb.AppendLine("70"); sb.AppendLine("0");
+            sb.AppendLine("62"); sb.AppendLine(layer.Item2.ToString(inv));
+            sb.AppendLine("6"); sb.AppendLine("Continuous");
+        }
+        sb.AppendLine("0"); sb.AppendLine("ENDTAB");
+        sb.AppendLine("0"); sb.AppendLine("ENDSEC");
+        sb.AppendLine("0");
+        sb.AppendLine("SECTION");
+        sb.AppendLine("2");
+        sb.AppendLine("ENTITIES");
+
+        if (data.floor_outline != null && data.floor_outline.Count >= 3)
+        {
+            sb.AppendLine("0"); sb.AppendLine("LWPOLYLINE");
+            sb.AppendLine("8"); sb.AppendLine("PLAN_FLOOR");
+            sb.AppendLine("62"); sb.AppendLine("8");
+            sb.AppendLine("70"); sb.AppendLine("1");
+            foreach (var p in data.floor_outline)
+            {
+                sb.AppendLine("10"); sb.AppendLine((p.x * scale).ToString(inv));
+                sb.AppendLine("20"); sb.AppendLine((p.y * scale).ToString(inv));
+            }
+        }
+
+        if (includeWalls)
+        {
+            if (data.wall_rects != null)
+                foreach (var w in data.wall_rects)
+                {
+                    float a = w.minX * scale, b = w.minZ * scale, c = w.maxX * scale, d = w.maxZ * scale;
+                    sb.AppendLine("0"); sb.AppendLine("LWPOLYLINE");
+                    sb.AppendLine("8"); sb.AppendLine("PLAN_WALLS");
+                    sb.AppendLine("62"); sb.AppendLine("7");
+                    sb.AppendLine("70"); sb.AppendLine("1");
+                    sb.AppendLine("10"); sb.AppendLine(a.ToString(inv)); sb.AppendLine("20"); sb.AppendLine(b.ToString(inv));
+                    sb.AppendLine("10"); sb.AppendLine(c.ToString(inv)); sb.AppendLine("20"); sb.AppendLine(b.ToString(inv));
+                    sb.AppendLine("10"); sb.AppendLine(c.ToString(inv)); sb.AppendLine("20"); sb.AppendLine(d.ToString(inv));
+                    sb.AppendLine("10"); sb.AppendLine(a.ToString(inv)); sb.AppendLine("20"); sb.AppendLine(d.ToString(inv));
+                }
+            if (data.wall_outlines != null)
+                foreach (var wo in data.wall_outlines)
+                {
+                    var pts = wo?.points;
+                    if (pts == null || pts.Count < 2) continue;
+                    sb.AppendLine("0"); sb.AppendLine("LWPOLYLINE");
+                    sb.AppendLine("8"); sb.AppendLine("PLAN_WALLS");
+                    sb.AppendLine("62"); sb.AppendLine("7");
+                    sb.AppendLine("70"); sb.AppendLine(pts.Count >= 3 ? "1" : "0");
+                    foreach (var p in pts)
+                    {
+                        sb.AppendLine("10"); sb.AppendLine((p.x * scale).ToString(inv));
+                        sb.AppendLine("20"); sb.AppendLine((p.y * scale).ToString(inv));
+                    }
+                }
+        }
+
+        if (data.trajectories != null)
+            for (int i = 0; i < data.trajectories.Count; i++)
+            {
+                var traj = data.trajectories[i];
+                var pts = traj?.points;
+                if (pts == null || pts.Count < 2) continue;
+                int color = (i % 7) + 1;
+                sb.AppendLine("0"); sb.AppendLine("LWPOLYLINE");
+                sb.AppendLine("8"); sb.AppendLine("TRACKS");
+                sb.AppendLine("62"); sb.AppendLine(color.ToString(inv));
+                sb.AppendLine("70"); sb.AppendLine("0");
+                foreach (var p in pts)
+                {
+                    sb.AppendLine("10"); sb.AppendLine((p.x * scale).ToString(inv));
+                    sb.AppendLine("20"); sb.AppendLine((p.y * scale).ToString(inv));
+                }
+            }
+
+        sb.AppendLine("0");
+        sb.AppendLine("ENDSEC");
+        sb.AppendLine("0");
+        sb.AppendLine("EOF");
+        File.WriteAllText(dxfPath, sb.ToString(), System.Text.Encoding.ASCII);
     }
 
     void UpdateFloorBounds()
     {
-        Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
-        if (floor == null) return;
-        _floorWorldBounds = new Bounds(floor.position, Vector3.zero);
+        if (floorTransform == null) return;
+        _floorWorldBounds = new Bounds(floorTransform.position, Vector3.zero);
         bool hasBounds = false;
-        foreach (var r in floor.GetComponentsInChildren<Renderer>(true))
+        foreach (var r in floorTransform.GetComponentsInChildren<Renderer>(true))
         {
             if (r != null && r.bounds.size.sqrMagnitude > 0.0001f)
             {
@@ -224,7 +323,7 @@ public class PlanAndTrackExporter : MonoBehaviour
                 else _floorWorldBounds.Encapsulate(r.bounds);
             }
         }
-        foreach (var c in floor.GetComponentsInChildren<Collider>(true))
+        foreach (var c in floorTransform.GetComponentsInChildren<Collider>(true))
         {
             if (c != null && c.bounds.size.sqrMagnitude > 0.0001f)
             {
@@ -248,33 +347,11 @@ public class PlanAndTrackExporter : MonoBehaviour
     List<Transform> GetWallTransforms()
     {
         var list = new List<Transform>();
-        if (wallsContainer != null)
+        if (wallsContainer == null) return list;
+        for (int i = 0; i < wallsContainer.childCount; i++)
         {
-            for (int i = 0; i < wallsContainer.childCount; i++)
-            {
-                var w = wallsContainer.GetChild(i);
-                if (w != null) list.Add(w);
-            }
-        }
-        else
-        {
-            var walls = GameObject.Find("Walls")?.transform;
-            if (walls != null)
-            {
-                for (int i = 0; i < walls.childCount; i++)
-                {
-                    var w = walls.GetChild(i);
-                    if (w != null) list.Add(w);
-                }
-            }
-            else
-            {
-                foreach (var go in FindObjectsOfType<Transform>())
-                {
-                    if (go != null && go.name.IndexOf("Wall", StringComparison.OrdinalIgnoreCase) >= 0)
-                        list.Add(go);
-                }
-            }
+            var w = wallsContainer.GetChild(i);
+            if (w != null) list.Add(w);
         }
         return list;
     }
@@ -499,7 +576,4 @@ public class PlanAndTrackExporter : MonoBehaviour
         public List<WallOutlineData> wall_outlines = new List<WallOutlineData>();
         public List<Point2D> plan_points = new List<Point2D>();
     }
-
-    [Serializable]
-    class PlanFloorOnly { public List<Point2D> floor_outline; }
 }
