@@ -47,7 +47,7 @@ public class PlanAndTrackExporter : MonoBehaviour
     bool _loggedFirstRecord;
 
     const float Eps = 0.001f;
-    const float EpsSq = 0.000001f;
+    const float EpsSq = 0.0001f;
 
     void Start()
     {
