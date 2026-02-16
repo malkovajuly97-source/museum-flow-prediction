@@ -87,8 +87,8 @@ public class TrackRecorder : MonoBehaviour
 
     void UpdateFloorBounds()
     {
-        Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
-        if (floor == null) return;
+        if (floorTransform == null) return;
+        Transform floor = floorTransform;
         var renderers = floor.GetComponentsInChildren<Renderer>(true);
         bool hasBounds = false;
         _floorWorldBounds = new Bounds(floor.position, Vector3.zero);
@@ -118,8 +118,8 @@ public class TrackRecorder : MonoBehaviour
         if (Time.time - _lastRecordTime < recordInterval) return;
         _lastRecordTime = Time.time;
 
-        var agents = FindObjectsOfType<AgentPath>();
-        if (!_loggedFirstRecord && agents != null)
+        var agents = FindObjectsByType<AgentPath>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        if (!_loggedFirstRecord && agents != null && agents.Length > 0)
         {
             _loggedFirstRecord = true;
             Debug.Log($"TrackRecorder: найдено {agents.Length} агентов (AgentPath). Запись каждые {recordInterval} сек.");
@@ -127,6 +127,7 @@ public class TrackRecorder : MonoBehaviour
         foreach (var ap in agents)
         {
             if (ap == null) continue;
+            if (!ap.recordTrack) continue;
             string id = ap.gameObject.name;
             if (string.IsNullOrEmpty(id)) id = "Agent_" + ap.GetInstanceID();
             if (!_tracks.ContainsKey(id)) _tracks[id] = new List<TrackPoint>();
@@ -165,7 +166,7 @@ public class TrackRecorder : MonoBehaviour
 
     void OnDisable()
     {
-        if (_tracks != null)
+        if (_tracks != null && _tracks.Count > 0)
             SaveTracks();
     }
 
@@ -191,11 +192,10 @@ public class TrackRecorder : MonoBehaviour
 
             var wrapper = new TrajectoryJsonWrapper { trajectories = list };
 
-            // План этажа из Unity — в тех же координатах (X, Z), что и треки
-            Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
-            if (floor != null)
+            // План этажа из Unity — в тех же координатах (X, Z), что и треки (только заданные в Inspector, без Find)
+            if (floorTransform != null)
             {
-                var outline = GetFloorOutline(floor);
+                var outline = GetFloorOutline(floorTransform);
                 if (outline != null && outline.Count > 0)
                     wrapper.floor_outline = outline;
                 else if (_floorWorldBounds.size.sqrMagnitude > 0.0001f)
@@ -210,26 +210,24 @@ public class TrackRecorder : MonoBehaviour
                 }
             }
 
-            Transform att = attractionsContainer != null ? attractionsContainer : GameObject.Find("Attractions")?.transform;
-            if (att != null)
+            if (attractionsContainer != null)
             {
                 var planPts = new List<Point2D>();
-                for (int i = 0; i < att.childCount; i++)
+                for (int i = 0; i < attractionsContainer.childCount; i++)
                 {
-                    var t = att.GetChild(i);
+                    var t = attractionsContainer.GetChild(i);
                     if (t != null)
                         planPts.Add(new Point2D { x = t.position.x, y = t.position.z });
                 }
                 wrapper.plan_points = planPts;
             }
 
-            Transform walls = wallsContainer != null ? wallsContainer : GameObject.Find("Walls")?.transform;
-            if (walls != null)
+            if (wallsContainer != null)
             {
                 var wallList = new List<WallRectData>();
-                for (int i = 0; i < walls.childCount; i++)
+                for (int i = 0; i < wallsContainer.childCount; i++)
                 {
-                    var w = walls.GetChild(i);
+                    var w = wallsContainer.GetChild(i);
                     if (w == null) continue;
                     Bounds b = GetBounds(w);
                     if (b.size.sqrMagnitude < 0.0001f) continue;

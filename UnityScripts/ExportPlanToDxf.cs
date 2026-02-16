@@ -311,7 +311,7 @@ public class ExportPlanToDxf : MonoBehaviour
                 }
                 else
                 {
-                    foreach (var go in FindObjectsOfType<Transform>())
+                    foreach (var go in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
                     {
                         if (go != null && go.name.IndexOf("Wall", StringComparison.OrdinalIgnoreCase) >= 0)
                             wallTransforms.Add(go);

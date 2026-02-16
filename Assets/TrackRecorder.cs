@@ -118,7 +118,7 @@ public class TrackRecorder : MonoBehaviour
         if (Time.time - _lastRecordTime < recordInterval) return;
         _lastRecordTime = Time.time;
 
-        var agents = FindObjectsOfType<AgentPath>();
+        var agents = FindObjectsByType<AgentPath>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         if (!_loggedFirstRecord && agents != null)
         {
             _loggedFirstRecord = true;

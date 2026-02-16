@@ -26,8 +26,13 @@ public class PlanAndTrackExporter : MonoBehaviour
     [Tooltip("Запасной объект для контура пола (если Floor не даёт контур). Назначь FBX здания, напр. Nancy_Museum.")]
     public Transform floorFallbackTransform;
 
+    [Header("Симуляция")]
+    [Tooltip("Скорость симуляции: 1 = реальное время, 10 = 50 мин симуляции за ~5 мин. Записанное время в треках — в единицах симуляции.")]
+    [Range(1f, 20f)]
+    public float simulationTimeScale = 1f;
+
     [Header("Запись треков")]
-    [Tooltip("Интервал записи позиции агентов (сек).")]
+    [Tooltip("Интервал записи позиции агентов (сек симуляции).")]
     [Range(0.1f, 2f)]
     public float recordInterval = 0.5f;
 
@@ -62,15 +67,19 @@ public class PlanAndTrackExporter : MonoBehaviour
         if (Time.time - _lastRecordTime < recordInterval) return;
         _lastRecordTime = Time.time;
 
-        var agents = FindObjectsOfType<AgentPath>();
+        var agents = FindObjectsByType<AgentPath>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         if (!_loggedFirstRecord && agents != null && agents.Length > 0)
         {
             _loggedFirstRecord = true;
-            Debug.Log($"PlanAndTrackExporter: найдено {agents.Length} агентов. Запись каждые {recordInterval} сек.");
+            int trackedCount = 0;
+            foreach (var ap in agents)
+                if (ap != null && ap.recordTrack) trackedCount++;
+            Debug.Log($"PlanAndTrackExporter: найдено {agents.Length} агентов ({trackedCount} отслеживаемых). Запись каждые {recordInterval} сек.");
         }
         foreach (var ap in agents)
         {
             if (ap == null) continue;
+            if (!ap.recordTrack) continue;
             string id = ap.gameObject.name;
             if (string.IsNullOrEmpty(id)) id = "Agent_" + ap.GetInstanceID();
             if (!_tracks.ContainsKey(id)) _tracks[id] = new List<Vector2>();

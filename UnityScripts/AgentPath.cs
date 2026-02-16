@@ -40,6 +40,13 @@ public class AgentPath : MonoBehaviour
     [Tooltip("Замкнуть маршрут: после последней точки снова идти к первой.")]
     public bool loop = false;
 
+    [Header("Запись трека")]
+    [Tooltip("Записывать ли трек этого агента (для фоновых = false, для отслеживаемых = true).")]
+    public bool recordTrack = true;
+
+    [Tooltip("Тип поведения (задаётся AgentSpawnManager).")]
+    public BehaviorType behaviorType = BehaviorType.Fast;
+
     [Header("Точки выхода")]
     [Tooltip("Точки выхода (5 лестниц). После последней картины агент идёт к ближайшей. Задаётся в Inspector или через AgentSpawnManager.")]
     public Transform[] exitPoints;
