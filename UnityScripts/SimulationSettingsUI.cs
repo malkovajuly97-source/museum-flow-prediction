@@ -12,7 +12,21 @@ using TMPro;
 ///
 /// Как собрать UI: Canvas → Panel с полем количества агентов, 4 слайдера типов, кнопка Старт/Стоп, кнопка Reset.
 /// У AgentSpawnManager снять "Start Spawning On Start", чтобы спавн только по кнопке Старт.
+///
+/// Вариант с typePanels: назначь 4 панели (Researcher, Active Explorer, Fast, Slow) — исходные значения подтянутся из AgentSpawnManager при старте и по Reset.
 /// </summary>
+[System.Serializable]
+public class BehaviorTypePanelBinding
+{
+    [Tooltip("Тип поведения (Researcher, Active Explorer, Fast, Slow).")]
+    public BehaviorType type;
+    [Tooltip("Слайдер процента (0–100%).")]
+    public Slider slider;
+    [Tooltip("Текст над слайдером (например «Researcher 25%»).")]
+    public TMP_Text label;
+    public TMP_InputField inputSpeedMin, inputSpeedMax, inputPointsMin, inputPointsMax, inputWaitTimeMin, inputWaitTimeMax;
+}
+
 public class SimulationSettingsUI : MonoBehaviour
 {
     [Header("Ссылки")]
@@ -67,6 +81,10 @@ public class SimulationSettingsUI : MonoBehaviour
     [Tooltip("Поле: Wait Time Max для типа Active Explorer.")]
     public TMP_InputField inputWaitTimeMaxActiveExplorer;
 
+    [Header("Панели по типам (опционально)")]
+    [Tooltip("Если задано — для каждого типа синхронизируются свои слайдер и 6 полей из AgentSpawnManager. Исходные значения по типам подставляются при старте и по Reset.")]
+    public BehaviorTypePanelBinding[] typePanels;
+
     [Header("Пределы")]
     [Tooltip("Минимальное количество агентов.")]
     public int agentCountMin = 1;
@@ -84,19 +102,36 @@ public class SimulationSettingsUI : MonoBehaviour
         SyncUIFromManager();
         StartCoroutine(SyncParamsAfterFrame());
 
-        if (sliderActiveExplorer != null) { sliderActiveExplorer.onValueChanged.AddListener(UpdateActiveExplorerLabel); sliderActiveExplorer.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateActiveExplorerLabel(sliderActiveExplorer.value); }
-        if (sliderFast != null) { sliderFast.onValueChanged.AddListener(UpdateFastLabel); sliderFast.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateFastLabel(sliderFast.value); }
-        if (sliderResearcher != null) { sliderResearcher.onValueChanged.AddListener(UpdateResearcherLabel); sliderResearcher.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateResearcherLabel(sliderResearcher.value); }
-        if (sliderSlow != null) { sliderSlow.onValueChanged.AddListener(UpdateSlowLabel); sliderSlow.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateSlowLabel(sliderSlow.value); }
+        if (typePanels != null && typePanels.Length > 0)
+        {
+            foreach (var p in typePanels)
+            {
+                if (p.slider != null)
+                {
+                    var type = p.type;
+                    p.slider.onValueChanged.AddListener(_ => PauseIfRunning());
+                    p.slider.onValueChanged.AddListener(v => UpdateTypePanelLabel(p, v));
+                    UpdateTypePanelLabel(p, p.slider.value);
+                }
+                AddEndEditPause(p.inputSpeedMin, p.inputSpeedMax, p.inputPointsMin, p.inputPointsMax, p.inputWaitTimeMin, p.inputWaitTimeMax);
+            }
+        }
+        else
+        {
+            if (sliderActiveExplorer != null) { sliderActiveExplorer.onValueChanged.AddListener(UpdateActiveExplorerLabel); sliderActiveExplorer.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateActiveExplorerLabel(sliderActiveExplorer.value); }
+            if (sliderFast != null) { sliderFast.onValueChanged.AddListener(UpdateFastLabel); sliderFast.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateFastLabel(sliderFast.value); }
+            if (sliderResearcher != null) { sliderResearcher.onValueChanged.AddListener(UpdateResearcherLabel); sliderResearcher.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateResearcherLabel(sliderResearcher.value); }
+            if (sliderSlow != null) { sliderSlow.onValueChanged.AddListener(UpdateSlowLabel); sliderSlow.onValueChanged.AddListener(_ => PauseIfRunning()); UpdateSlowLabel(sliderSlow.value); }
+            if (inputSpeedMinActiveExplorer != null) inputSpeedMinActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
+            if (inputSpeedMaxActiveExplorer != null) inputSpeedMaxActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
+            if (inputPointsMinActiveExplorer != null) inputPointsMinActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
+            if (inputPointsMaxActiveExplorer != null) inputPointsMaxActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
+            if (inputWaitTimeMinActiveExplorer != null) inputWaitTimeMinActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
+            if (inputWaitTimeMaxActiveExplorer != null) inputWaitTimeMaxActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
+        }
 
         if (inputAgentCount != null)
             inputAgentCount.onEndEdit.AddListener(_ => PauseIfRunning());
-        if (inputSpeedMinActiveExplorer != null) inputSpeedMinActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
-        if (inputSpeedMaxActiveExplorer != null) inputSpeedMaxActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
-        if (inputPointsMinActiveExplorer != null) inputPointsMinActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
-        if (inputPointsMaxActiveExplorer != null) inputPointsMaxActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
-        if (inputWaitTimeMinActiveExplorer != null) inputWaitTimeMinActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
-        if (inputWaitTimeMaxActiveExplorer != null) inputWaitTimeMaxActiveExplorer.onEndEdit.AddListener(_ => PauseIfRunning());
 
         if (buttonStartStop != null)
         {
@@ -107,6 +142,23 @@ public class SimulationSettingsUI : MonoBehaviour
         }
         if (buttonReset != null)
             buttonReset.onClick.AddListener(OnResetClicked);
+    }
+
+    void AddEndEditPause(params TMP_InputField[] fields)
+    {
+        if (fields == null) return;
+        foreach (var f in fields)
+            if (f != null) f.onEndEdit.AddListener(_ => PauseIfRunning());
+    }
+
+    static string GetTypeDisplayName(BehaviorType t)
+    {
+        switch (t) { case BehaviorType.ActiveExplorer: return "Active Explorer"; case BehaviorType.Fast: return "Fast"; case BehaviorType.Researcher: return "Researcher"; case BehaviorType.Slow: return "Slow"; default: return t.ToString(); }
+    }
+
+    void UpdateTypePanelLabel(BehaviorTypePanelBinding p, float value)
+    {
+        if (p.label != null) p.label.text = GetTypeDisplayName(p.type) + " " + Mathf.RoundToInt(value) + "%";
     }
 
     void PauseIfRunning()
@@ -169,6 +221,23 @@ public class SimulationSettingsUI : MonoBehaviour
 
         if (spawnManager.behaviorTypes == null || spawnManager.behaviorTypes.Length == 0) return;
 
+        if (typePanels != null && typePanels.Length > 0)
+        {
+            foreach (var p in typePanels)
+            {
+                BehaviorTypeSettings s = GetSettingsForType(p.type);
+                if (s == null) continue;
+                if (p.slider != null) { p.slider.minValue = 0f; p.slider.maxValue = 100f; p.slider.value = Mathf.Clamp(s.percentage, 0, 100); UpdateTypePanelLabel(p, p.slider.value); }
+                if (p.inputSpeedMin != null) p.inputSpeedMin.text = s.speedMin.ToString("F2");
+                if (p.inputSpeedMax != null) p.inputSpeedMax.text = s.speedMax.ToString("F2");
+                if (p.inputPointsMin != null) p.inputPointsMin.text = s.pointsMin.ToString();
+                if (p.inputPointsMax != null) p.inputPointsMax.text = s.pointsMax.ToString();
+                if (p.inputWaitTimeMin != null) p.inputWaitTimeMin.text = s.waitTimeMin.ToString("F2");
+                if (p.inputWaitTimeMax != null) p.inputWaitTimeMax.text = s.waitTimeMax.ToString("F2");
+            }
+            return;
+        }
+
         SetSliderFromType(sliderActiveExplorer, BehaviorType.ActiveExplorer);
         SetSliderFromType(sliderFast, BehaviorType.Fast);
         SetSliderFromType(sliderResearcher, BehaviorType.Researcher);
@@ -182,10 +251,21 @@ public class SimulationSettingsUI : MonoBehaviour
         SyncActiveExplorerParamsFromManager();
     }
 
+    BehaviorTypeSettings GetSettingsForType(BehaviorType type)
+    {
+        if (spawnManager == null || spawnManager.behaviorTypes == null) return null;
+        foreach (var t in spawnManager.behaviorTypes)
+            if (t.type == type) return t;
+        return null;
+    }
+
     IEnumerator SyncParamsAfterFrame()
     {
         yield return null;
-        SyncActiveExplorerParamsFromManager();
+        if (typePanels != null && typePanels.Length > 0)
+            SyncUIFromManager();
+        else
+            SyncActiveExplorerParamsFromManager();
     }
 
     void SyncActiveExplorerParamsFromManager()
@@ -241,6 +321,23 @@ public class SimulationSettingsUI : MonoBehaviour
 
         if (inputAgentCount != null && int.TryParse(inputAgentCount.text, out int count))
             spawnManager.trackedAgentCount = Mathf.Clamp(count, agentCountMin, agentCountMax);
+
+        if (typePanels != null && typePanels.Length > 0)
+        {
+            foreach (var p in typePanels)
+            {
+                BehaviorTypeSettings s = GetSettingsForType(p.type);
+                if (s == null) continue;
+                if (p.slider != null) s.percentage = Mathf.RoundToInt(Mathf.Clamp(p.slider.value, 0f, 100f));
+                if (p.inputSpeedMin != null && float.TryParse(p.inputSpeedMin.text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v)) s.speedMin = Mathf.Max(0f, v);
+                if (p.inputSpeedMax != null && float.TryParse(p.inputSpeedMax.text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) s.speedMax = Mathf.Max(0f, v);
+                if (p.inputPointsMin != null && int.TryParse(p.inputPointsMin.text, out int i)) s.pointsMin = Mathf.Max(0, i);
+                if (p.inputPointsMax != null && int.TryParse(p.inputPointsMax.text, out i)) s.pointsMax = Mathf.Max(0, i);
+                if (p.inputWaitTimeMin != null && float.TryParse(p.inputWaitTimeMin.text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) s.waitTimeMin = Mathf.Max(0f, v);
+                if (p.inputWaitTimeMax != null && float.TryParse(p.inputWaitTimeMax.text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) s.waitTimeMax = Mathf.Max(0f, v);
+            }
+            return;
+        }
 
         ApplySliderToType(sliderActiveExplorer, BehaviorType.ActiveExplorer);
         ApplySliderToType(sliderFast, BehaviorType.Fast);
