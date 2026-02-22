@@ -248,7 +248,13 @@ public class TrackRecorder : MonoBehaviour
             if (list.Count == 0 && _tracks.Count > 0)
                 Debug.LogWarning($"TrackRecorder: записано {_tracks.Count} агентов, но у всех меньше 2 точек. Подожди, пока агенты походят.");
             if (list.Count == 0 && _tracks.Count == 0)
-                Debug.LogWarning("TrackRecorder: агенты не найдены. Проверь, что на сцене есть объекты с компонентом AgentPath.");
+            {
+                var agentsNow = FindObjectsByType<AgentPath>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+                if (agentsNow != null && agentsNow.Length > 0)
+                    Debug.Log("TrackRecorder: агенты есть, треков ещё нет (запись только началась). Сохрани позже по клавише S.");
+                else
+                    Debug.LogWarning("TrackRecorder: агенты не найдены. Проверь, что на сцене есть объекты с компонентом AgentPath.");
+            }
         }
         catch (System.Exception ex)
         {

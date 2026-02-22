@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 // Создаёт агентов с разнесённым по времени появлением и передаёт им контейнер аттракций.
 // Положи на сцену, укажи префаб агента (Capsule с AgentPath + NavMeshAgent) и контейнер Attractions.
@@ -20,6 +21,17 @@ public class AgentSpawnManager : MonoBehaviour
 
     [Tooltip("Точки выхода (5 лестниц). После обхода картин агент идёт к ближайшей. Если пусто — ищет объект Exit и его дочерние.")]
     public Transform[] exitPoints = new Transform[5];
+
+    [Header("Автозагрузка из модели (слои FBX)")]
+    [Tooltip("Корень модели FBX (объект, под которым в иерархии лежат узлы Attractions, Entrance, Exit). Если задан — аттракции, входы и выходы подставятся автоматически, ручное перетаскивание не нужно.")]
+    public Transform pointsSourceRoot;
+
+    [Tooltip("Имя узла с точками аттракций (дочерние объекты = точки картин).")]
+    public string attractionsNodeName = "Attractions";
+    [Tooltip("Имя узла с точками входа (дочерние = позиции появления агентов).")]
+    public string entranceNodeName = "Entrance";
+    [Tooltip("Имя узла с точками выхода (дочерние = лестницы/выходы).")]
+    public string exitNodeName = "Exit";
 
     [Header("Скорость симуляции")]
     [Tooltip("Time.timeScale: 1 = реальное время, >1 ускорение (например 10 = симуляция в 10 раз быстрее).")]
@@ -82,6 +94,60 @@ public class AgentSpawnManager : MonoBehaviour
     void Awake()
     {
         SaveDefaultParams();
+        TryLoadPointsFromLayerNodes();
+    }
+
+    /// <summary>Если задан pointsSourceRoot — ищем под ним узлы Attractions, Entrance, Exit (в т.ч. вложенные) и подставляем в контейнеры/массивы.</summary>
+    void TryLoadPointsFromLayerNodes()
+    {
+        if (pointsSourceRoot == null) return;
+
+        Transform att = FindChildRecursive(pointsSourceRoot, attractionsNodeName);
+        Transform ent = FindChildRecursive(pointsSourceRoot, entranceNodeName);
+        Transform ext = FindChildRecursive(pointsSourceRoot, exitNodeName);
+
+        if (att != null)
+        {
+            attractionsContainer = att;
+        }
+        if (ent != null)
+        {
+            var list = new List<Transform>();
+            for (int j = 0; j < ent.childCount; j++)
+                list.Add(ent.GetChild(j));
+            spawnPoints = list.Count > 0 ? list.ToArray() : new Transform[] { ent };
+            spawnPoint = null;
+        }
+        if (ext != null)
+        {
+            var list = new List<Transform>();
+            for (int j = 0; j < ext.childCount; j++)
+                list.Add(ext.GetChild(j));
+            exitPoints = list.Count > 0 ? list.ToArray() : new Transform[] { ext };
+        }
+
+        if (attractionsContainer != null || (spawnPoints != null && spawnPoints.Length > 0) || (exitPoints != null && exitPoints.Length > 0))
+            Debug.Log("AgentSpawnManager: точки загружены из слоёв модели (Attractions=" + (attractionsContainer != null ? attractionsContainer.childCount + " точек" : "нет") + ", Entrance=" + (spawnPoints != null ? spawnPoints.Length + " точек" : "нет") + ", Exit=" + (exitPoints != null ? exitPoints.Length + " точек" : "нет") + ").");
+    }
+
+    /// <summary>Найти первый дочерний Transform с заданным именем (рекурсивно по всей иерархии). Регистр не учитывается (слои: Floor, Walls, Entrance, Attractions, Exit).</summary>
+    static Transform FindChildRecursive(Transform parent, string childName)
+    {
+        if (parent == null || string.IsNullOrEmpty(childName)) return null;
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform c = parent.GetChild(i);
+            if (string.Equals(c.name, childName, System.StringComparison.OrdinalIgnoreCase)) return c;
+            var found = FindChildRecursive(c, childName);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /// <summary>Заново подставить точки из pointsSourceRoot (вызвать после смены модели или смены Points Source в Inspector).</summary>
+    public void RefreshPointsFromLayerNodes()
+    {
+        TryLoadPointsFromLayerNodes();
     }
 
     void SaveDefaultParams()
@@ -134,7 +200,7 @@ public class AgentSpawnManager : MonoBehaviour
         }
         if (attractionsContainer == null)
         {
-            Debug.LogError("AgentSpawnManager: не назначен Attractions Container.");
+            Debug.LogWarning("AgentSpawnManager: план не загружен. Сначала нажмите «Load plan» и выберите .glb/.gltf, затем «Start».");
             return;
         }
         Time.timeScale = simulationTimeScale;
@@ -149,7 +215,16 @@ public class AgentSpawnManager : MonoBehaviour
     public void BeginSpawning()
     {
         if (_spawnStarted) return;
-        if (agentPrefab == null || attractionsContainer == null) return;
+        if (agentPrefab == null)
+        {
+            Debug.LogWarning("AgentSpawnManager: спавн не запущен — не назначен Agent Prefab. Назначьте префаб в инспекторе или положите префаб в папку Resources с именем AgentPrefab или Agent.");
+            return;
+        }
+        if (attractionsContainer == null)
+        {
+            Debug.LogWarning("AgentSpawnManager: спавн не запущен — нет контейнера аттракций (загрузите план с узлом Attractions).");
+            return;
+        }
         _spawnStarted = true;
         Time.timeScale = simulationTimeScale;
         _spawnCoroutine = StartCoroutine(SpawnAllAgents());
@@ -177,9 +252,9 @@ public class AgentSpawnManager : MonoBehaviour
         if (spawnPoints != null && spawnPoints.Length > 0)
         {
             Transform t = spawnPoints[Random.Range(0, spawnPoints.Length)];
-            if (t != null) return t.position;
+            if (t != null) return AgentPath.GetWorldPositionForPoint(t);
         }
-        if (spawnPoint != null) return spawnPoint.position;
+        if (spawnPoint != null) return AgentPath.GetWorldPositionForPoint(spawnPoint);
         return transform.position;
     }
 
@@ -240,9 +315,22 @@ public class AgentSpawnManager : MonoBehaviour
             settings = new BehaviorTypeSettings { speedMin = 1f, speedMax = 2f, pointsMin = 5, pointsMax = 25, waitTimeMin = 1.4f, waitTimeMax = 3f };
 
         Vector3 spawnPos = GetSpawnPosition();
-        GameObject agent = Instantiate(agentPrefab, spawnPos, Quaternion.identity);
+        const float sampleRadius = 100f;
+        const float fallbackRadius = 200f;
+        if (!NavMesh.SamplePosition(spawnPos, out NavMeshHit hit, sampleRadius, NavMesh.AllAreas))
+        {
+            Vector3 fallbackOrigin = pointsSourceRoot != null ? pointsSourceRoot.position : Vector3.zero;
+            if (!NavMesh.SamplePosition(fallbackOrigin, out hit, fallbackRadius, NavMesh.AllAreas))
+            {
+                Debug.LogWarning("AgentSpawnManager: не найдена точка на NavMesh для спавна агента, пропуск.");
+                return;
+            }
+        }
+
+        GameObject agent = Instantiate(agentPrefab, hit.position, Quaternion.identity);
         agent.name = namePrefix + "_" + index;
         _spawnedAgents.Add(agent);
+        agent.SetActive(false);
 
         AgentPath path = agent.GetComponent<AgentPath>();
         if (path != null)
@@ -257,9 +345,14 @@ public class AgentSpawnManager : MonoBehaviour
             path.behaviorType = bType;
         }
 
-        var nav = agent.GetComponent<UnityEngine.AI.NavMeshAgent>();
+        var nav = agent.GetComponent<NavMeshAgent>();
         if (nav != null)
+        {
+            nav.Warp(hit.position);
             nav.speed = Random.Range(settings.speedMin, settings.speedMax);
+        }
+
+        agent.SetActive(true);
 
         Color color = isTracked ? GetColorForType(bType) : backgroundAgentColor;
         foreach (var r in agent.GetComponentsInChildren<Renderer>(true))

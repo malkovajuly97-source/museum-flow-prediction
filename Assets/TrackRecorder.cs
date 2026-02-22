@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -50,6 +51,34 @@ public class TrackRecorder : MonoBehaviour
     float _lastRecordTime;
     Bounds _floorWorldBounds;
 
+    /// <summary>Ищет Transform по имени только среди активных в иерархии объектов (избегает Assertion go.IsActive()).</summary>
+    static Transform FindActiveTransform(string name)
+    {
+        var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+        foreach (var go in roots)
+        {
+            if (!go.activeInHierarchy) continue;
+            if (string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase))
+                return go.transform;
+            var t = FindActiveRecursive(go.transform, name);
+            if (t != null) return t;
+        }
+        return null;
+    }
+
+    static Transform FindActiveRecursive(Transform parent, string name)
+    {
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            var c = parent.GetChild(i);
+            if (!c.gameObject.activeInHierarchy) continue;
+            if (string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase)) return c;
+            var found = FindActiveRecursive(c, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     void Start()
     {
         UpdateFloorBounds();
@@ -87,7 +116,7 @@ public class TrackRecorder : MonoBehaviour
 
     void UpdateFloorBounds()
     {
-        Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
+        Transform floor = floorTransform != null ? floorTransform : FindActiveTransform("Floor");
         if (floor == null) return;
         var renderers = floor.GetComponentsInChildren<Renderer>(true);
         bool hasBounds = false;
@@ -192,7 +221,7 @@ public class TrackRecorder : MonoBehaviour
             var wrapper = new TrajectoryJsonWrapper { trajectories = list };
 
             // План этажа из Unity — в тех же координатах (X, Z), что и треки
-            Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
+            Transform floor = floorTransform != null ? floorTransform : FindActiveTransform("Floor");
             if (floor != null)
             {
                 var outline = GetFloorOutline(floor);
@@ -210,7 +239,7 @@ public class TrackRecorder : MonoBehaviour
                 }
             }
 
-            Transform att = attractionsContainer != null ? attractionsContainer : GameObject.Find("Attractions")?.transform;
+            Transform att = attractionsContainer != null ? attractionsContainer : FindActiveTransform("Attractions");
             if (att != null)
             {
                 var planPts = new List<Point2D>();
@@ -223,7 +252,7 @@ public class TrackRecorder : MonoBehaviour
                 wrapper.plan_points = planPts;
             }
 
-            Transform walls = wallsContainer != null ? wallsContainer : GameObject.Find("Walls")?.transform;
+            Transform walls = wallsContainer != null ? wallsContainer : FindActiveTransform("Walls");
             if (walls != null)
             {
                 var wallList = new List<WallRectData>();
@@ -250,7 +279,13 @@ public class TrackRecorder : MonoBehaviour
             if (list.Count == 0 && _tracks.Count > 0)
                 Debug.LogWarning($"TrackRecorder: записано {_tracks.Count} агентов, но у всех меньше 2 точек. Подожди, пока агенты походят.");
             if (list.Count == 0 && _tracks.Count == 0)
-                Debug.LogWarning("TrackRecorder: агенты не найдены. Проверь, что на сцене есть объекты с компонентом AgentPath.");
+            {
+                var agentsNow = FindObjectsByType<AgentPath>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+                if (agentsNow != null && agentsNow.Length > 0)
+                    Debug.Log("TrackRecorder: агенты есть, треков ещё нет (запись только началась). Сохрани позже по клавише S.");
+                else
+                    Debug.LogWarning("TrackRecorder: агенты не найдены. Проверь, что на сцене есть объекты с компонентом AgentPath.");
+            }
         }
         catch (System.Exception ex)
         {

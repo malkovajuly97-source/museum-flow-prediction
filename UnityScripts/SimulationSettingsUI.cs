@@ -42,6 +42,12 @@ public class SimulationSettingsUI : MonoBehaviour
     [Tooltip("Кнопка восстановления исходных параметров (количество агентов, проценты и 6 параметров по типам). Не перезапускает симуляцию.")]
     public Button buttonReset;
 
+    [Tooltip("Кнопка экспорта плана и треков (то же, что ПКМ → «Экспорт план + треки» или клавиша S).")]
+    public Button buttonExport;
+
+    [Tooltip("Экспортер плана и треков. Если не назначен — ищется в сцене.")]
+    public PlanAndTrackExporter planAndTrackExporter;
+
     [Tooltip("Поле ввода: количество отслеживаемых агентов (Input Field или TMP_InputField).")]
     public TMP_InputField inputAgentCount;
 
@@ -136,12 +142,16 @@ public class SimulationSettingsUI : MonoBehaviour
         if (buttonStartStop != null)
         {
             buttonStartStop.onClick.AddListener(OnStartStopClicked);
-            if (labelStartStop == null && buttonStartStop != null)
+            if (labelStartStop == null)
                 labelStartStop = buttonStartStop.GetComponentInChildren<TMP_Text>();
             UpdateStartStopButtonLabel();
         }
         if (buttonReset != null)
             buttonReset.onClick.AddListener(OnResetClicked);
+        if (planAndTrackExporter == null)
+            planAndTrackExporter = FindFirstObjectByType<PlanAndTrackExporter>();
+        if (buttonExport != null && planAndTrackExporter != null)
+            buttonExport.onClick.AddListener(planAndTrackExporter.ExportAll);
     }
 
     void AddEndEditPause(params TMP_InputField[] fields)

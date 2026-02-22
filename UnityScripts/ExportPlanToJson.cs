@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Экспортирует план этажа (пол + стены) из Unity в JSON.
@@ -22,6 +23,33 @@ public class ExportPlanToJson : MonoBehaviour
 
     const float Eps = 0.001f;
     const float EpsSq = 0.000001f;
+
+    static Transform FindActiveTransform(string name)
+    {
+        var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+        foreach (var go in roots)
+        {
+            if (!go.activeInHierarchy) continue;
+            if (string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase))
+                return go.transform;
+            var t = FindActiveRecursive(go.transform, name);
+            if (t != null) return t;
+        }
+        return null;
+    }
+
+    static Transform FindActiveRecursive(Transform parent, string name)
+    {
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            var c = parent.GetChild(i);
+            if (!c.gameObject.activeInHierarchy) continue;
+            if (string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase)) return c;
+            var found = FindActiveRecursive(c, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
 
     static List<(Vector2 a, Vector2 b)> GetBoundaryEdgesXZ(Transform t)
     {
@@ -271,7 +299,7 @@ public class ExportPlanToJson : MonoBehaviour
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             var data = new PlanJsonData();
 
-            Transform floor = floorTransform != null ? floorTransform : GameObject.Find("Floor")?.transform;
+            Transform floor = floorTransform != null ? floorTransform : FindActiveTransform("Floor");
             if (floor != null)
             {
                 var outline = GetMeshOutlineXZ(floor);
@@ -294,7 +322,7 @@ public class ExportPlanToJson : MonoBehaviour
             }
             else
             {
-                var walls = GameObject.Find("Walls")?.transform;
+                var walls = FindActiveTransform("Walls");
                 if (walls != null)
                 {
                     for (int i = 0; i < walls.childCount; i++)

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -56,6 +58,38 @@ public class PlanAndTrackExporter : MonoBehaviour
 
     const float Eps = 0.001f;
     const float EpsSq = 0.0001f;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    static extern void DownloadFileWebGL(string filename, string content);
+#endif
+
+    static Transform FindActiveTransform(string name)
+    {
+        var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+        foreach (var go in roots)
+        {
+            if (!go.activeInHierarchy) continue;
+            if (string.Equals(go.name, name, StringComparison.OrdinalIgnoreCase))
+                return go.transform;
+            var t = FindActiveRecursive(go.transform, name);
+            if (t != null) return t;
+        }
+        return null;
+    }
+
+    static Transform FindActiveRecursive(Transform parent, string name)
+    {
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            var c = parent.GetChild(i);
+            if (!c.gameObject.activeInHierarchy) continue;
+            if (string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase)) return c;
+            var found = FindActiveRecursive(c, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
 
     void Start()
     {
@@ -178,7 +212,7 @@ public class PlanAndTrackExporter : MonoBehaviour
             }
 
             // Attractions
-            Transform att = attractionsContainer != null ? attractionsContainer : GameObject.Find("Attractions")?.transform;
+            Transform att = attractionsContainer != null ? attractionsContainer : FindActiveTransform("Attractions");
             if (att != null)
             {
                 for (int i = 0; i < att.childCount; i++)
@@ -189,11 +223,20 @@ public class PlanAndTrackExporter : MonoBehaviour
                 }
             }
 
-            string dxfPath = Path.Combine(dir, Path.GetFileNameWithoutExtension(outputFileName) + ".dxf");
+            string dxfFileName = Path.GetFileNameWithoutExtension(outputFileName) + ".dxf";
+            string dxfPath = Path.Combine(dir, dxfFileName);
             try
             {
-                WriteDxf(wrapper, dxfPath, exportWallsToDxf);
+                string dxfContent = BuildDxfString(wrapper, exportWallsToDxf);
+#if !UNITY_WEBGL || UNITY_EDITOR
+                File.WriteAllText(dxfPath, dxfContent, System.Text.Encoding.ASCII);
+#endif
+#if UNITY_WEBGL && !UNITY_EDITOR
+                DownloadFileWebGL(dxfFileName, dxfContent);
+                Debug.Log($"PlanAndTrackExporter: DXF скачан в браузере ({wrapper.trajectories.Count} треков, план). Имя файла: {dxfFileName}");
+#else
                 Debug.Log($"PlanAndTrackExporter: DXF сохранён в {dxfPath} ({wrapper.trajectories.Count} треков, план)");
+#endif
             }
             catch (Exception exDxf) { Debug.LogError($"PlanAndTrackExporter DXF: {exDxf.Message}"); }
             if (wrapper.trajectories.Count == 0 && _tracks.Count > 0)
@@ -207,8 +250,8 @@ public class PlanAndTrackExporter : MonoBehaviour
         }
     }
 
-    /// <summary>Пишет DXF напрямую из тех же данных (метры → мм). Без JSON/Python.</summary>
-    static void WriteDxf(PlanAndTracksData data, string dxfPath, bool includeWalls)
+    /// <summary>Собирает строку DXF из данных (метры → мм). Без JSON/Python.</summary>
+    static string BuildDxfString(PlanAndTracksData data, bool includeWalls)
     {
         const float scale = 1000f; // Unity m → mm
         var inv = System.Globalization.CultureInfo.InvariantCulture;
@@ -316,7 +359,7 @@ public class PlanAndTrackExporter : MonoBehaviour
         sb.AppendLine("ENDSEC");
         sb.AppendLine("0");
         sb.AppendLine("EOF");
-        File.WriteAllText(dxfPath, sb.ToString(), System.Text.Encoding.ASCII);
+        return sb.ToString();
     }
 
     void UpdateFloorBounds()

@@ -70,6 +70,23 @@ public class AgentPath : MonoBehaviour
     bool _goingToExit;
     float _lastCrowdCheck;
 
+    /// <summary>Мировая позиция точки: центр меша (bounds или MeshFilter), иначе transform.position. Для объектов из Rhino/glTF с pivot в (0,0,0) и одинаковым Transform берём центр геометрии.</summary>
+    public static Vector3 GetWorldPositionForPoint(Transform t)
+    {
+        if (t == null) return Vector3.zero;
+        var r = t.GetComponentInChildren<Renderer>();
+        if (r != null && r.enabled && r.bounds.size.sqrMagnitude > 0.0001f)
+            return r.bounds.center;
+        var mf = t.GetComponentInChildren<MeshFilter>();
+        if (mf != null && mf.sharedMesh != null)
+        {
+            Bounds b = mf.sharedMesh.bounds;
+            Vector3 center = mf.transform.TransformPoint(b.center);
+            return center;
+        }
+        return t.position;
+    }
+
     void Start()
     {
         _agent = GetComponent<NavMeshAgent>();
@@ -89,7 +106,14 @@ public class AgentPath : MonoBehaviour
         _waiting = false;
         _goingToExit = false;
         _lastCrowdCheck = 0f;
-        SetDestinationToCurrent();
+        StartCoroutine(SetDestinationNextFrame());
+    }
+
+    IEnumerator SetDestinationNextFrame()
+    {
+        yield return null;
+        if (_agent != null && _agent.isOnNavMesh)
+            SetDestinationToCurrent();
     }
 
     void BuildRandomPointsFromContainer()
@@ -139,7 +163,7 @@ public class AgentPath : MonoBehaviour
 
         for (int step = 1; step < n; step++)
         {
-            Vector3 currentPos = route[route.Count - 1].position;
+            Vector3 currentPos = GetWorldPositionForPoint(route[route.Count - 1]);
             var candidates = new List<(int idx, float sqrDist)>();
 
             for (int i = 0; i < total; i++)
@@ -147,8 +171,9 @@ public class AgentPath : MonoBehaviour
                 if (visited.Contains(i)) continue;
                 Transform t = allPointsContainer.GetChild(i);
                 if (t == null) continue;
-                float dx = t.position.x - currentPos.x;
-                float dz = t.position.z - currentPos.z;
+                Vector3 tp = GetWorldPositionForPoint(t);
+                float dx = tp.x - currentPos.x;
+                float dz = tp.z - currentPos.z;
                 float sqrDist = dx * dx + dz * dz;
                 candidates.Add((i, sqrDist));
             }
@@ -170,16 +195,17 @@ public class AgentPath : MonoBehaviour
 
     void SetDestinationToCurrent()
     {
+        if (_agent == null || !_agent.isOnNavMesh) return;
         if (points == null || _currentIndex < 0 || _currentIndex >= points.Length) return;
         Transform target = points[_currentIndex];
         if (target == null) return;
-        _agent.SetDestination(target.position);
+        _agent.SetDestination(GetWorldPositionForPoint(target));
     }
 
     bool IsCurrentTargetCrowded()
     {
         if (points == null || _currentIndex < 0 || _currentIndex >= points.Length) return false;
-        Vector3 pos = points[_currentIndex].position;
+        Vector3 pos = GetWorldPositionForPoint(points[_currentIndex]);
         Collider[] hits = Physics.OverlapSphere(pos, crowdRadius);
         int count = 0;
         foreach (var c in hits)
@@ -217,17 +243,18 @@ public class AgentPath : MonoBehaviour
         foreach (var t in exits)
         {
             if (t == null) continue;
-            float dx = t.position.x - pos.x;
-            float dz = t.position.z - pos.z;
+            Vector3 tp = GetWorldPositionForPoint(t);
+            float dx = tp.x - pos.x;
+            float dz = tp.z - pos.z;
             float sqr = dx * dx + dz * dz;
             if (sqr < minSqr) { minSqr = sqr; nearest = t; }
         }
-        if (nearest != null)
+        if (nearest != null && _agent.isOnNavMesh)
         {
             _goingToExit = true;
-            _agent.SetDestination(nearest.position);
+            _agent.SetDestination(GetWorldPositionForPoint(nearest));
         }
-        else
+        else if (_agent.isOnNavMesh)
         {
             _agent.ResetPath();
         }
@@ -235,6 +262,8 @@ public class AgentPath : MonoBehaviour
 
     void Update()
     {
+        if (_agent == null || !_agent.isOnNavMesh) return;
+
         if (_goingToExit)
         {
             if (!_agent.pathPending && _agent.remainingDistance <= exitArrivalDistance)
@@ -258,7 +287,7 @@ public class AgentPath : MonoBehaviour
             }
         }
 
-        if (!_agent.pathPending && _agent.remainingDistance <= arrivalDistance)
+        if (!_agent.pathPending && _agent.isOnNavMesh && _agent.remainingDistance <= arrivalDistance)
         {
             float wait = Random.Range(waitTimeMin, waitTimeMax);
             StartCoroutine(WaitThenNext(wait));
