@@ -293,7 +293,7 @@ def load_simulated_trajectories_from_csv_in_meters(
     layer_reference_bird="Outline",
     layer_reference_unity="PLAN_FLOOR",
     floor_number=0,
-    timestamp_in_milliseconds=True,
+    timestamp_in_milliseconds=False,
 ):
     """
     Загружает треки из CSV (папка с *.csv), приводит к метрам в два этапа:
