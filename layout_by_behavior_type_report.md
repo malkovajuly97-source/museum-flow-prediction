@@ -1,0 +1,23 @@
+# Различия признаков планировки и изовиста по типам поведения
+
+Проверено признаков: **34**. Значимых при α = 0.05: **4**.
+
+## Значимые признаки (p < 0.05)
+
+- **H10_mean_path_remaining** (p = 0.011527)
+- **H4_mean_depth** (p = 0.019491)
+- **H7_pct_end** (p = 0.034837)
+- **H8_pct_path_revisit** (p = 0.014831)
+
+## Рекомендация
+
+По данным есть достоверные отличия по признакам планировки/изовиста между типами поведения. Имеет смысл добавлять доп. настройки по типам (тип-специфичные параметры в агентной модели).
+
+---
+
+**Расшифровка и интерпретация:** см. `model_search/Openness and size of the space/openness_analysis/layout_by_behavior_type_interpretation_ru.md`.
+
+Файлы: `layout_by_behavior_type_kruskal.csv`, `layout_by_behavior_type_means.csv` (в папке openness_analysis).
+
+---
+*Копия для открытия по ссылке. Основной файл: model_search/Openness and size of the space/openness_analysis/layout_by_behavior_type_report.md*
