@@ -285,6 +285,110 @@ def load_simulated_trajectories_from_unity_dxf(
     return trajectories
 
 
+def load_simulated_trajectories_from_csv_in_meters(
+    path_floor_dxf,
+    path_unity_dxf,
+    path_csv_folder,
+    scale_factor,
+    layer_reference_bird="Outline",
+    layer_reference_unity="PLAN_FLOOR",
+    floor_number=0,
+    timestamp_in_milliseconds=True,
+):
+    """
+    Загружает треки из CSV (папка с *.csv), приводит к метрам в два этапа:
+    1) Unity → Floor_0 raw (по референсу Outline и PLAN_FLOOR);
+    2) Floor_0 raw × scale_factor → метры.
+    Возвращает list of DataFrame с колонками x, y, timestamp (в секундах)
+    для расчёта ToP той же функцией, что и real: density.compute_time_of_presence(..., scale_factor=1.0).
+    Если timestamp в CSV уже в секундах — передайте timestamp_in_milliseconds=False.
+    """
+    path = Path(path_csv_folder).resolve()
+    if not path.exists() or not path.is_dir():
+        raise FileNotFoundError(f"Папка CSV не найдена: {path}")
+    csv_files = glob.glob(str(path / "*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"Нет CSV в {path}")
+    bbox_bird = get_bbox_from_dxf_layer(path_floor_dxf, layer_reference_bird)
+    bbox_unity_raw = get_bbox_from_dxf_layer(path_unity_dxf, layer_reference_unity)
+    # CSV из TrackRecorder — координаты в метрах (Unity world units). DXF может быть в мм → приводим bbox Unity к метрам
+    ux_min, ux_max, uy_min, uy_max = bbox_unity_raw
+    span_ux = ux_max - ux_min
+    span_uy = uy_max - uy_min
+    if max(span_ux, span_uy) > 1000:
+        scale_bbox = 1000.0
+        bbox_unity = (ux_min / scale_bbox, ux_max / scale_bbox, uy_min / scale_bbox, uy_max / scale_bbox)
+    else:
+        bbox_unity = bbox_unity_raw
+    sx, sy, ox, oy = _compute_unity_to_floor_transform(bbox_bird, bbox_unity)
+
+    out = []
+    for csv_file in csv_files:
+        try:
+            df = pd.read_csv(csv_file)
+            if "floorNumber" in df.columns:
+                df = df[df["floorNumber"] == floor_number].copy()
+            if len(df) == 0:
+                continue
+            if "timestamp" in df.columns:
+                df = df.sort_values("timestamp").reset_index(drop=True)
+            xu = df["x"].astype(float).values
+            yu = df["y"].astype(float).values
+            x_b = xu * sx + ox
+            y_b = yu * sy + oy
+            x_m = x_b * scale_factor
+            y_m = y_b * scale_factor
+            out_df = pd.DataFrame({"x": x_m, "y": y_m})
+            if "timestamp" in df.columns:
+                ts = df["timestamp"].astype(float).values
+                if timestamp_in_milliseconds:
+                    ts = ts / 1000.0  # миллисекунды → секунды
+                out_df["timestamp"] = ts
+            out.append(out_df)
+        except Exception as e:
+            print(f"Ошибка при загрузке {csv_file}: {e}")
+    if not out:
+        raise ValueError(f"Не найдено траекторий в {path}")
+    return out
+
+
+# Масштаб BIRD raw → метры (как в density.py / plot_density_grids.py)
+BIRD_SCALE_FACTOR_M = 55.07 / 5401
+
+
+def load_unity_plan_segments_in_floor0_meters(
+    path_floor_dxf,
+    path_unity_dxf,
+    layer_reference_bird="Outline",
+    layer_reference_unity="PLAN_FLOOR",
+    layer_plan_unity="PLAN_FLOOR",
+    scale_factor=None,
+):
+    """
+    Загружает план этажа из unity DXF (слой PLAN_FLOOR), приводит к координатам Floor_0
+    по референсу Outline (Floor_0) и PLAN_FLOOR (unity), переводит в метры.
+    Возвращает list of (x1, y1, x2, y2) в метрах для отрисовки.
+    """
+    if scale_factor is None:
+        scale_factor = BIRD_SCALE_FACTOR_M
+    bbox_bird = get_bbox_from_dxf_layer(path_floor_dxf, layer_reference_bird)
+    bbox_unity = get_bbox_from_dxf_layer(path_unity_dxf, layer_reference_unity)
+    sx, sy, ox, oy = _compute_unity_to_floor_transform(bbox_bird, bbox_unity)
+
+    raw_segments = parse_floor_plan_lines(path_unity_dxf, layer_plan_unity)
+    segments_m = []
+    for (x1, y1, x2, y2) in raw_segments:
+        x1_b = x1 * sx + ox
+        y1_b = y1 * sy + oy
+        x2_b = x2 * sx + ox
+        y2_b = y2 * sy + oy
+        segments_m.append((
+            x1_b * scale_factor, y1_b * scale_factor,
+            x2_b * scale_factor, y2_b * scale_factor,
+        ))
+    return segments_m
+
+
 def parse_floor_plan_lines(path_dxf, layer_floor_plan):
     """
     Извлекает линии плана этажа из DXF (для отрисовки).
