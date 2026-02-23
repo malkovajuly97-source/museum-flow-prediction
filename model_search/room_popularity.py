@@ -1,6 +1,6 @@
 """
 Room popularity ranking из DXF: зоны 0–15, треки в слоях или CSV.
-Публичный API: compute_room_popularity_ranking(), save_ranking(), load_trajectories_from_csv().
+Публичный API: compute_room_popularity_ranking(), save_ranking(), load_trajectories_from_csv(), load_simulated_trajectories_from_unity_dxf().
 """
 import glob
 import json
@@ -187,6 +187,102 @@ def parse_zones_from_dxf(path_dxf, layer_area):
 
     polygons_with_zone.sort(key=lambda pwz: _polygon_area(pwz[0]))
     return polygons_with_zone, zone_labels
+
+
+def get_bbox_from_dxf_layer(path_dxf, layer_name):
+    """
+    Извлекает bounding box геометрии указанного слоя DXF в сырых координатах.
+    Возвращает (x_min, x_max, y_min, y_max). Если слой пуст — ValueError.
+    """
+    path = Path(path_dxf).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"DXF не найден: {path}")
+    if ezdxf is None:
+        raise ImportError("Установите ezdxf: pip install ezdxf")
+    doc = ezdxf.readfile(str(path))
+    msp = doc.modelspace()
+    xs, ys = [], []
+    for e in msp.query("LWPOLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_name:
+            continue
+        try:
+            for pt in e.get_points("xy"):
+                xs.append(float(pt[0]))
+                ys.append(float(pt[1]))
+        except Exception:
+            continue
+    for e in msp.query("LINE"):
+        if getattr(e.dxf, "layer", "") != layer_name:
+            continue
+        try:
+            s, en = e.dxf.start, e.dxf.end
+            xs.extend([float(s.x), float(en.x)])
+            ys.extend([float(s.y), float(en.y)])
+        except Exception:
+            continue
+    for e in msp.query("POLYLINE"):
+        if getattr(e.dxf, "layer", "") != layer_name:
+            continue
+        try:
+            for v in e.vertices:
+                loc = v.dxf.location
+                xs.append(float(loc.x))
+                ys.append(float(loc.y))
+        except Exception:
+            continue
+    if not xs or not ys:
+        raise ValueError(f"Слой '{layer_name}' пуст или не найден в {path}")
+    return float(min(xs)), float(max(xs)), float(min(ys)), float(max(ys))
+
+
+def _compute_unity_to_floor_transform(bbox_bird, bbox_unity):
+    """
+    По двум bbox (x_min, x_max, y_min, y_max) вычисляет scale и offset
+    для преобразования точки из unity в координаты Floor_0.dxf:
+    x_bird = x_unity * scale_x + offset_x, y_bird = y_unity * scale_y + offset_y.
+    """
+    (bx_min, bx_max, by_min, by_max) = bbox_bird
+    (ux_min, ux_max, uy_min, uy_max) = bbox_unity
+    span_ux = ux_max - ux_min
+    span_uy = uy_max - uy_min
+    span_bx = bx_max - bx_min
+    span_by = by_max - by_min
+    scale_x = span_bx / span_ux if span_ux > 1e-9 else 1.0
+    scale_y = span_by / span_uy if span_uy > 1e-9 else 1.0
+    cx_bird = (bx_min + bx_max) / 2
+    cy_bird = (by_min + by_max) / 2
+    cx_unity = (ux_min + ux_max) / 2
+    cy_unity = (uy_min + uy_max) / 2
+    offset_x = cx_bird - cx_unity * scale_x
+    offset_y = cy_bird - cy_unity * scale_y
+    return scale_x, scale_y, offset_x, offset_y
+
+
+def load_simulated_trajectories_from_unity_dxf(
+    path_floor_dxf,
+    path_unity_dxf,
+    layer_reference_bird="Outline",
+    layer_reference_unity="PLAN_FLOOR",
+    layer_tracks_unity="TRACKS",
+):
+    """
+    Загружает симулированные треки из unity_plan_and_tracks.dxf и приводит их
+    к координатам Floor_0.dxf по референсу Outline (Floor_0) и PLAN_FLOOR (unity).
+    Возвращает list[list[tuple]] в координатах Floor_0.dxf (сырые).
+    """
+    bbox_bird = get_bbox_from_dxf_layer(path_floor_dxf, layer_reference_bird)
+    bbox_unity = get_bbox_from_dxf_layer(path_unity_dxf, layer_reference_unity)
+    scale_x, scale_y, offset_x, offset_y = _compute_unity_to_floor_transform(bbox_bird, bbox_unity)
+
+    raw_trajectories = parse_trajectories_from_dxf(path_unity_dxf, layer_tracks_unity)
+    trajectories = []
+    for points in raw_trajectories:
+        transformed = [
+            (x * scale_x + offset_x, y * scale_y + offset_y)
+            for (x, y) in points
+        ]
+        trajectories.append(transformed)
+    return trajectories
 
 
 def parse_floor_plan_lines(path_dxf, layer_floor_plan):
