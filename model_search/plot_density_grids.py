@@ -57,13 +57,13 @@ def load_floor_plan_segments(path_dxf, layer):
     return segments
 
 
-def plot_heatmap_on_plan(ax, heatmap, x_edges, y_edges, segments, title, cmap="viridis", label="", vmin=None, vmax=None, draw_grid=True):
-    """Рисует heatmap поверх плана этажа. vmin/vmax — единая шкала для сравнения."""
+def plot_heatmap_on_plan(ax, heatmap, x_edges, y_edges, segments, title, cmap="viridis", label="", vmin=None, vmax=None, draw_grid=True, interpolation="nearest"):
+    """Рисует heatmap поверх плана этажа. vmin/vmax — единая шкала. interpolation: 'nearest' (чёткие ячейки) или 'bilinear' (сглаживание)."""
     ax.set_facecolor("white")
     for x1, y1, x2, y2 in segments:
         ax.plot([x1, x2], [y1, y2], "k-", linewidth=1.2)
     extent = [x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]]
-    im = ax.imshow(heatmap, extent=extent, origin="lower", aspect="auto", cmap=cmap, interpolation="nearest", vmin=vmin, vmax=vmax)
+    im = ax.imshow(heatmap, extent=extent, origin="lower", aspect="auto", cmap=cmap, interpolation=interpolation, vmin=vmin, vmax=vmax)
     if draw_grid:
         for x in x_edges:
             ax.axvline(x, color="white", linewidth=0.5, alpha=0.9)
