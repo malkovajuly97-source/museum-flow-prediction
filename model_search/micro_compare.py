@@ -181,6 +181,10 @@ def run_global_summary(d_real, d_sim, hm_real_smooth, hm_sim_smooth, top_real_sm
             lines.append(f"- **Correlation:** Pearson r = {d_met['pearson']:.3f}, Spearman rho = {d_met['spearman']:.3f} — **{interpret_corr(d_met['spearman'])}** agreement.")
             lines.append(f"- **Errors:** MAE = {d_met['mae']:.2f}, NMAE = {d_met['nmae']:.2f} — {'substantial differences in magnitude.' if d_met['nmae'] > 1 else 'moderate differences.'}")
         lines.append(f"- **Global total:** density sum real = {d_tot_r}, sim = {d_tot_s}, ratio sim/real = {d_ratio:.3f} — **{interpret_ratio(d_ratio)}** overall visits.")
+        if d_met:
+            ok_s = "✓" if d_met["spearman"] >= 0.7 else "✗"
+            ok_n = "✓" if d_met["nmae"] <= 1.0 else "✗"
+            lines.append(f"- **Targets:** Spearman ρ ≥ 0.7 (spatial pattern) {ok_s}; NMAE ≤ 1.0 (magnitude) {ok_n}.")
         lines.append("")
         t_met = corr_errors(top_real_smooth, top_sim_smooth)
         t_tot_r = float(d_real["top_matrix"].sum())
@@ -191,6 +195,10 @@ def run_global_summary(d_real, d_sim, hm_real_smooth, hm_sim_smooth, top_real_sm
             lines.append(f"- **Correlation:** Pearson r = {t_met['pearson']:.3f}, Spearman rho = {t_met['spearman']:.3f} — **{interpret_corr(t_met['spearman'])}** agreement.")
             lines.append(f"- **Errors:** MAE = {t_met['mae']:.2f} s, NMAE = {t_met['nmae']:.2f} — {'substantial differences.' if t_met['nmae'] > 1 else 'moderate differences.'}")
         lines.append(f"- **Global total:** ToP sum real = {t_tot_r:.0f} s ({t_tot_r/60:.1f} min), sim = {t_tot_s:.0f} s ({t_tot_s/60:.1f} min), ratio sim/real = {t_ratio:.3f} — **{interpret_ratio(t_ratio)}** presence time.")
+        if t_met:
+            ok_s = "✓" if t_met["spearman"] >= 0.7 else "✗"
+            ok_n = "✓" if t_met["nmae"] <= 1.0 else "✗"
+            lines.append(f"- **Targets:** Spearman ρ ≥ 0.7 (spatial pattern) {ok_s}; NMAE ≤ 1.0 (magnitude) {ok_n}.")
         lines.append("")
         sr, ss = d_real.get("stop_duration_stats") or {}, d_sim.get("stop_duration_stats") or {}
         lines.append("### Stop duration")
@@ -210,8 +218,16 @@ def run_global_summary(d_real, d_sim, hm_real_smooth, hm_sim_smooth, top_real_sm
                     lines.append("  Simulated stops are on average longer — model overestimates dwell time.")
                 else:
                     lines.append("  Stop duration distributions are similar.")
+            ok_mean = "✓" if (diff_mean is not None and abs(diff_mean) < 3) else "✗"
+            ok_prop = "✓" if (diff_prop is not None and abs(diff_prop) < 0.10) else "✗"
+            lines.append(f"- **Targets:** |mean diff| < 3 s {ok_mean}; |proportion long diff| < 10% {ok_prop}.")
         else:
             lines.append("No stop statistics for real or simulated (trajectories with timestamps required).")
+        lines.append("")
+        lines.append("### Recommendations (targets to aim for)")
+        lines.append("- **Density:** Spearman ρ ≥ 0.7 for good spatial agreement; NMAE ≤ 1.0 for acceptable magnitude errors. Ratio sim/real between 0.8 and 1.2 indicates similar overall activity level.")
+        lines.append("- **ToP:** Same as density (Spearman ≥ 0.7, NMAE ≤ 1.0). Global ToP ratio near 1.0 means total presence time is well matched.")
+        lines.append("- **Stop duration:** |Difference in mean stop duration| < 3 s and |difference in proportion of long stops| < 10% suggest similar dwelling behaviour.")
         lines.append("")
         lines.append("---")
         lines.append("*Summary generated from metrics computed in the cells above.*")
