@@ -85,10 +85,10 @@ def load_trajectories_from_csv(folder_path, floor_number=0):
     """
     path = Path(folder_path).resolve()
     if not path.is_dir():
-        raise FileNotFoundError(f"Папка не найдена: {path}")
+        raise FileNotFoundError(f"Folder not found: {path}")
     csv_files = glob.glob(str(path / "*.csv"))
     if not csv_files:
-        raise FileNotFoundError(f"Нет CSV в {path}")
+        raise FileNotFoundError(f"No CSV files in {path}")
     trajectories = []
     for csv_file in csv_files:
         try:
@@ -99,18 +99,18 @@ def load_trajectories_from_csv(folder_path, floor_number=0):
                 points = [(float(row["x"]), float(row["y"])) for _, row in df_floor.iterrows()]
                 trajectories.append(points)
         except Exception as e:
-            print(f"Ошибка при загрузке {csv_file}: {e}")
+            print(f"Error loading {csv_file}: {e}")
     if not trajectories:
-        raise ValueError(f"Не найдено траекторий для этажа {floor_number}")
+        raise ValueError(f"No trajectories found for floor {floor_number}")
     return trajectories
 
 
 def parse_zones_from_dxf(path_dxf, layer_area):
     path = Path(path_dxf).resolve()
     if not path.exists():
-        raise FileNotFoundError(f"DXF не найден: {path}")
+        raise FileNotFoundError(f"DXF not found: {path}")
     if ezdxf is None:
-        raise ImportError("Установите ezdxf: pip install ezdxf")
+        raise ImportError("Install ezdxf: pip install ezdxf")
     doc = ezdxf.readfile(str(path))
     msp = doc.modelspace()
 
@@ -196,9 +196,9 @@ def get_bbox_from_dxf_layer(path_dxf, layer_name):
     """
     path = Path(path_dxf).resolve()
     if not path.exists():
-        raise FileNotFoundError(f"DXF не найден: {path}")
+        raise FileNotFoundError(f"DXF not found: {path}")
     if ezdxf is None:
-        raise ImportError("Установите ezdxf: pip install ezdxf")
+        raise ImportError("Install ezdxf: pip install ezdxf")
     doc = ezdxf.readfile(str(path))
     msp = doc.modelspace()
     xs, ys = [], []
@@ -231,7 +231,7 @@ def get_bbox_from_dxf_layer(path_dxf, layer_name):
         except Exception:
             continue
     if not xs or not ys:
-        raise ValueError(f"Слой '{layer_name}' пуст или не найден в {path}")
+        raise ValueError(f"Layer '{layer_name}' is empty or not found in {path}")
     return float(min(xs)), float(max(xs)), float(min(ys)), float(max(ys))
 
 
@@ -305,10 +305,10 @@ def load_simulated_trajectories_from_csv_in_meters(
     """
     path = Path(path_csv_folder).resolve()
     if not path.exists() or not path.is_dir():
-        raise FileNotFoundError(f"Папка CSV не найдена: {path}")
+        raise FileNotFoundError(f"CSV folder not found: {path}")
     csv_files = glob.glob(str(path / "*.csv"))
     if not csv_files:
-        raise FileNotFoundError(f"Нет CSV в {path}")
+        raise FileNotFoundError(f"No CSV files in {path}")
     bbox_bird = get_bbox_from_dxf_layer(path_floor_dxf, layer_reference_bird)
     bbox_unity_raw = get_bbox_from_dxf_layer(path_unity_dxf, layer_reference_unity)
     # CSV из TrackRecorder — координаты в метрах (Unity world units). DXF может быть в мм → приводим bbox Unity к метрам
@@ -346,9 +346,9 @@ def load_simulated_trajectories_from_csv_in_meters(
                 out_df["timestamp"] = ts
             out.append(out_df)
         except Exception as e:
-            print(f"Ошибка при загрузке {csv_file}: {e}")
+            print(f"Error loading {csv_file}: {e}")
     if not out:
-        raise ValueError(f"Не найдено траекторий в {path}")
+        raise ValueError(f"No trajectories found in {path}")
     return out
 
 
@@ -425,7 +425,7 @@ def parse_floor_plan_lines(path_dxf, layer_floor_plan):
 def parse_trajectories_from_dxf(path_dxf, layer_trajectories):
     path = Path(path_dxf).resolve()
     if ezdxf is None:
-        raise ImportError("Установите ezdxf: pip install ezdxf")
+        raise ImportError("Install ezdxf: pip install ezdxf")
     doc = ezdxf.readfile(str(path))
     msp = doc.modelspace()
 
@@ -559,7 +559,7 @@ def compute_room_popularity_ranking(path_dxf, layer_area, layer_trajectories=Non
     elif layer_trajectories is not None:
         trajectories = parse_trajectories_from_dxf(path_dxf, layer_trajectories)
     else:
-        raise ValueError("Укажите layer_trajectories или trajectories")
+        raise ValueError("Specify layer_trajectories or trajectories")
     return _compute_ranking_from_trajectories(polygons_with_zone, zone_labels, trajectories)
 
 

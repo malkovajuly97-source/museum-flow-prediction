@@ -73,8 +73,8 @@ def plot_heatmap_on_plan(ax, heatmap, x_edges, y_edges, segments, title, cmap="v
         plt.colorbar(im, ax=ax, label=label)
     ax.set_xlim(x_edges[0], x_edges[-1])
     ax.set_ylim(y_edges[0], y_edges[-1])
-    ax.set_xlabel("x (м)")
-    ax.set_ylabel("y (м)")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
     ax.set_title(title)
     ax.set_aspect("equal")
 
@@ -95,8 +95,8 @@ def plot_plan_with_grid(x_edges, y_edges, segments, title, ax):
 
     ax.set_xlim(x_edges[0], x_edges[-1])
     ax.set_ylim(y_edges[0], y_edges[-1])
-    ax.set_xlabel("x (м)")
-    ax.set_ylabel("y (м)")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
     ax.set_title(title)
     ax.set_aspect("equal")
     ax.grid(False)
@@ -138,8 +138,8 @@ def plot_plan_with_grid_and_tracks(
 
     ax.set_xlim(x_edges[0], x_edges[-1])
     ax.set_ylim(y_edges[0], y_edges[-1])
-    ax.set_xlabel("x (м)")
-    ax.set_ylabel("y (м)")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
     ax.set_title(title)
     ax.set_aspect("equal")
     ax.grid(False)
@@ -148,13 +148,13 @@ def plot_plan_with_grid_and_tracks(
 def main():
     segments = load_floor_plan_segments(PATH_DXF, LAYER_FLOOR_PLAN)
     if not segments:
-        print(f"План не найден в {PATH_DXF} (слой {LAYER_FLOOR_PLAN})")
+        print(f"Floor plan not found in {PATH_DXF} (layer {LAYER_FLOOR_PLAN})")
 
     if not DENSITY_BIRD.exists():
-        print(f"Сначала запустите density.py. Файл не найден: {DENSITY_BIRD}")
+        print(f"Run density.py first. File not found: {DENSITY_BIRD}")
         return
     if not DENSITY_UNITY.exists():
-        print(f"Сначала запустите density_Unity.py. Файл не найден: {DENSITY_UNITY}")
+        print(f"Run density_Unity.py first. File not found: {DENSITY_UNITY}")
         return
 
     with open(DENSITY_BIRD, encoding="utf-8") as f:
@@ -169,25 +169,25 @@ def main():
     fig1, ax1 = plt.subplots(figsize=(10, 8))
     plot_plan_with_grid(
         x_edges, y_edges, segments,
-        f"BIRD: план этажа (n={data_bird['n_trajectories']} траекторий)",
+        f"BIRD: floor plan (n={data_bird['n_trajectories']} trajectories)",
         ax1,
     )
     plt.tight_layout()
     plt.savefig(OUTPUT_BIRD, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close()
-    print(f"Сохранено: {OUTPUT_BIRD}")
+    print(f"Saved: {OUTPUT_BIRD}")
 
     # Unity
     fig2, ax2 = plt.subplots(figsize=(10, 8))
     plot_plan_with_grid(
         x_edges, y_edges, segments,
-        f"Unity: план этажа (n={data_unity['n_trajectories']} траекторий)",
+        f"Unity: floor plan (n={data_unity['n_trajectories']} trajectories)",
         ax2,
     )
     plt.tight_layout()
     plt.savefig(OUTPUT_UNITY, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close()
-    print(f"Сохранено: {OUTPUT_UNITY}")
+    print(f"Saved: {OUTPUT_UNITY}")
 
     # Combined
     fig3, (ax3, ax4) = plt.subplots(1, 2, figsize=(16, 8))
@@ -201,11 +201,11 @@ def main():
         f"Unity (n={data_unity['n_trajectories']})",
         ax4,
     )
-    plt.suptitle("План этажа с общей сеткой 1×1 м (сопоставимые ячейки)", fontsize=12)
+    plt.suptitle("Floor plan with 1×1 m grid (comparable cells)", fontsize=12)
     plt.tight_layout()
     plt.savefig(OUTPUT_COMBINED, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close()
-    print(f"Сохранено: {OUTPUT_COMBINED}")
+    print(f"Saved: {OUTPUT_COMBINED}")
 
 
 if __name__ == "__main__":
