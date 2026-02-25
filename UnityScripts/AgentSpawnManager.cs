@@ -35,17 +35,17 @@ public class AgentSpawnManager : MonoBehaviour
 
     [Header("Скорость симуляции")]
     [Tooltip("Time.timeScale: 1 = реальное время, >1 ускорение (например 10 = симуляция в 10 раз быстрее).")]
-    [Range(0.25f, 20f)]
+    [Range(0.25f, 50f)]
     public float simulationTimeScale = 1f;
 
     [Header("Типы поведения (для отслеживаемых агентов)")]
     [Tooltip("Настройки типов и их доли. Фоновые агенты получают случайный тип из этих же настроек. Отслеживаемые — по процентам.")]
     public BehaviorTypeSettings[] behaviorTypes = new BehaviorTypeSettings[]
     {
-        new BehaviorTypeSettings { type = BehaviorType.ActiveExplorer, percentage = 25, speedMin = 1.3f, speedMax = 2f, pointsMin = 80, pointsMax = 135, waitTimeMin = 6f, waitTimeMax = 21f },
-        new BehaviorTypeSettings { type = BehaviorType.Fast, percentage = 25, speedMin = 1.5f, speedMax = 2f, pointsMin = 60, pointsMax = 100, waitTimeMin = 7f, waitTimeMax = 17f },
-        new BehaviorTypeSettings { type = BehaviorType.Researcher, percentage = 25, speedMin = 1.2f, speedMax = 1.8f, pointsMin = 80, pointsMax = 135, waitTimeMin = 9f, waitTimeMax = 21f },
-        new BehaviorTypeSettings { type = BehaviorType.Slow, percentage = 25, speedMin = 1f, speedMax = 1.5f, pointsMin = 70, pointsMax = 100, waitTimeMin = 6f, waitTimeMax = 32f },
+        new BehaviorTypeSettings { type = BehaviorType.ActiveExplorer, percentage = 25, speedMin = 0.36f, speedMax = 0.44f, pointsMin = 33, pointsMax = 78, waitTimeMin = 9.3f, waitTimeMax = 20.3f },
+        new BehaviorTypeSettings { type = BehaviorType.Fast, percentage = 25, speedMin = 0.30f, speedMax = 0.42f, pointsMin = 22, pointsMax = 58, waitTimeMin = 6.3f, waitTimeMax = 16.4f },
+        new BehaviorTypeSettings { type = BehaviorType.Researcher, percentage = 25, speedMin = 0.21f, speedMax = 0.39f, pointsMin = 59, pointsMax = 94, waitTimeMin = 5.6f, waitTimeMax = 18.2f },
+        new BehaviorTypeSettings { type = BehaviorType.Slow, percentage = 25, speedMin = 0.14f, speedMax = 0.53f, pointsMin = 31, pointsMax = 74, waitTimeMin = 9.7f, waitTimeMax = 31.4f },
     };
 
     [Header("Фоновые агенты (создаются первыми)")]
