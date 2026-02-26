@@ -21,12 +21,20 @@ public class AgentPath : MonoBehaviour
     [Tooltip("Сколько точек выбрать из allPointsContainer (используется только если allPointsContainer задан).")]
     public int numberOfPointsToVisit = 5;
 
-    [Tooltip("Предпочитать соседние точки: следующий пункт выбирается из K ближайших (логичнее для музея).")]
+    [Tooltip("Предпочитать соседние точки: первая — из ближайших к входу, дальше — жадный nearest (логичнее для музея).")]
     public bool preferNeighbors = true;
 
-    [Tooltip("Из скольких ближайших не посещённых точек выбирать следующую (при preferNeighbors).")]
+    [Tooltip("Первая точка: из скольких ближайших к месту спавна (входу) выбирать случайно. Min (включительно).")]
+    [Range(1, 20)]
+    public int entranceNearestKMin = 5;
+
+    [Tooltip("Первая точка: из скольких ближайших к входу выбирать случайно. Max (включительно). K = random(Min, Max+1).")]
+    [Range(1, 20)]
+    public int entranceNearestKMax = 10;
+
+    [Tooltip("Следующие точки: из скольких ближайших не посещённых выбирать случайно. 1 = строго ближайшая, 3+ = больше разнообразия маршрутов (рекомендуется при одном входе).")]
     [Range(1, 10)]
-    public int chooseFromNearestK = 5;
+    public int chooseFromNearestK = 3;
 
     [Tooltip("Время ожидания (сек) у каждой картины — случайное от min до max.")]
     public float waitTimeMin = 1.4f;
@@ -151,13 +159,29 @@ public class AgentPath : MonoBehaviour
         }
     }
 
-    /// <summary>Строит маршрут: каждая следующая точка — из K ближайших не посещённых.</summary>
+    /// <summary>Строит маршрут: первая точка — случайная из K ближайших к входу; дальше — случайная из chooseFromNearestK ближайших не посещённых (больше разнообразия). Избегание толпы в рантайме (SkipToNextPoint).</summary>
     void BuildNeighborPath(int n, int total)
     {
         var route = new List<Transform>(n);
         var visited = new HashSet<int>();
 
-        int startIdx = Random.Range(0, total);
+        Vector3 entrancePos = transform.position;
+
+        var firstCandidates = new List<(int idx, float sqrDist)>();
+        for (int i = 0; i < total; i++)
+        {
+            Transform t = allPointsContainer.GetChild(i);
+            if (t == null) continue;
+            Vector3 tp = GetWorldPositionForPoint(t);
+            float dx = tp.x - entrancePos.x;
+            float dz = tp.z - entrancePos.z;
+            firstCandidates.Add((i, dx * dx + dz * dz));
+        }
+        firstCandidates.Sort((a, b) => a.sqrDist.CompareTo(b.sqrDist));
+
+        int kFirst = Mathf.Clamp(Random.Range(entranceNearestKMin, entranceNearestKMax + 1), 1, firstCandidates.Count);
+        int pickFirst = Random.Range(0, kFirst);
+        int startIdx = firstCandidates[pickFirst].idx;
         route.Add(allPointsContainer.GetChild(startIdx));
         visited.Add(startIdx);
 
@@ -181,7 +205,6 @@ public class AgentPath : MonoBehaviour
             if (candidates.Count == 0) break;
 
             candidates.Sort((a, b) => a.sqrDist.CompareTo(b.sqrDist));
-
             int k = Mathf.Min(chooseFromNearestK, candidates.Count);
             int pick = Random.Range(0, k);
             int nextIdx = candidates[pick].idx;

@@ -27,6 +27,10 @@ MAX_JUMP_M = 5.0
 MAX_GAP_SEC = 300.0
 LONG_STOP_THRESHOLD_SEC = 30.0
 
+# Fixed color scale limits for heatmaps (same scale across runs for comparability)
+DENSITY_VMIN, DENSITY_VMAX = 0, 175   # points
+TOP_VMIN, TOP_VMAX = 0, 160           # seconds
+
 
 def _split_trajectory_by_gaps(df, scale_factor, max_jump_m, max_gap_sec):
     """Split trajectory into segments when dist > max_jump_m (m) or time_diff > max_gap_sec (s)."""
@@ -174,18 +178,15 @@ def _density_cmap():
     return mcolors.LinearSegmentedColormap.from_list("density_cool_warm", colors, N=256)
 
 
-def plot_density_heatmaps(d_real, d_sim, segments, xe, ye, sigma_d=1.2):
-    """Plot density heatmaps (real and sim), return hm_real_smooth, hm_sim_smooth for later comparison."""
+def plot_density_heatmaps(d_real, d_sim, segments, xe, ye, sigma_d=1.2, vmin_d=None, vmax_d=None):
+    """Plot density heatmaps (real and sim), return hm_real_smooth, hm_sim_smooth for later comparison.
+    Fixed scale: vmin_d/vmax_d (default DENSITY_VMIN/DENSITY_VMAX) so colors are comparable across runs."""
     hm_real = d_real["heatmap"]
     hm_sim = d_sim["heatmap"] if d_sim is not None else None
-    vals_d = np.concatenate([
-        hm_real[hm_real > 0].ravel(),
-        hm_sim[hm_sim > 0].ravel() if hm_sim is not None else [],
-    ])
-    vmax_d = float(np.percentile(vals_d, 95)) if len(vals_d) > 0 else max(
-        hm_real.max(), hm_sim.max() if hm_sim is not None else 0
-    )
-    vmin_d, vmax_d = 0, vmax_d
+    if vmin_d is None:
+        vmin_d = DENSITY_VMIN
+    if vmax_d is None:
+        vmax_d = DENSITY_VMAX
 
     hm_real_smooth = gaussian_filter(hm_real.astype(float), sigma=sigma_d, mode="constant", cval=0)
     hm_sim_smooth = (
@@ -215,8 +216,9 @@ def plot_density_heatmaps(d_real, d_sim, segments, xe, ye, sigma_d=1.2):
     return hm_real_smooth, hm_sim_smooth
 
 
-def plot_top_heatmaps(d_real, d_sim, segments, xe, ye, sigma=1.2):
-    """Plot ToP heatmaps (real and sim), return top_real_smooth, top_sim_smooth for later comparison."""
+def plot_top_heatmaps(d_real, d_sim, segments, xe, ye, sigma=1.2, vmin_t=None, vmax_t=None):
+    """Plot ToP heatmaps (real and sim), return top_real_smooth, top_sim_smooth for later comparison.
+    Fixed scale: vmin_t/vmax_t (default TOP_VMIN/TOP_VMAX) so colors are comparable across runs."""
     top_real = d_real["top_matrix"]
     top_sim = d_sim["top_matrix"] if d_sim is not None else None
     top_real_smooth = gaussian_filter(top_real.astype(float), sigma=sigma, mode="constant", cval=0)
@@ -224,14 +226,10 @@ def plot_top_heatmaps(d_real, d_sim, segments, xe, ye, sigma=1.2):
         gaussian_filter(top_sim.astype(float), sigma=sigma, mode="constant", cval=0)
         if top_sim is not None else None
     )
-    vals_t = np.concatenate([
-        top_real[top_real > 0].ravel(),
-        top_sim[top_sim > 0].ravel() if top_sim is not None else [],
-    ])
-    vmax_t = float(np.percentile(vals_t, 95)) if len(vals_t) > 0 else max(
-        top_real.max(), top_sim.max() if top_sim is not None else 0
-    )
-    vmin_t, vmax_t = 0, vmax_t
+    if vmin_t is None:
+        vmin_t = TOP_VMIN
+    if vmax_t is None:
+        vmax_t = TOP_VMAX
 
     colors_top = [
         (0, (33/255, 102/255, 172/255)), (0.14, (67/255, 147/255, 195/255)),
